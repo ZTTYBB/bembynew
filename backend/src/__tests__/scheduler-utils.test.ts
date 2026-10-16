@@ -217,4 +217,79 @@ describe("pickNextRun", () => {
       );
     }
   });
+
+  // --- overnight window (e.g. 23:00 to 02:00) ---
+
+  describe("overnight window (23:00 - 02:00)", () => {
+    it("picks between tonight 23:00 and tomorrow 02:00 when called during daytime", () => {
+      setNow("10:00:00"); // 10:00 UTC — before tonight's window
+      const result = pickNextRun(2300, 200, TZ);
+      const ms = result.toMillis();
+      const startMs = new Date(`${BASE_DATE}T23:00:00Z`).getTime();
+      const endMs = new Date("2024-01-16T02:00:00Z").getTime();
+
+      expect(ms).toBeGreaterThanOrEqual(startMs);
+      expect(ms).toBeLessThan(endMs);
+    });
+
+    it("picks between now+1 min and tomorrow 02:00 when called late at night inside window", () => {
+      setNow("23:30:00"); // 23:30 UTC — inside tonight's window
+      const result = pickNextRun(2300, 200, TZ);
+      const ms = result.toMillis();
+      const earliestMs = new Date(`${BASE_DATE}T23:31:00Z`).getTime();
+      const endMs = new Date("2024-01-16T02:00:00Z").getTime();
+
+      expect(ms).toBeGreaterThanOrEqual(earliestMs);
+      expect(ms).toBeLessThan(endMs);
+    });
+
+    it("picks between now+1 min and today 02:00 when called in early morning tail of window", () => {
+      setNow("01:15:00"); // 01:15 UTC — in early morning portion of window
+      const result = pickNextRun(2300, 200, TZ);
+      const ms = result.toMillis();
+      const earliestMs = new Date(`${BASE_DATE}T01:16:00Z`).getTime();
+      const endMs = new Date(`${BASE_DATE}T02:00:00Z`).getTime();
+
+      expect(result.toFormat("yyyy-MM-dd")).toBe(BASE_DATE);
+      expect(ms).toBeGreaterThanOrEqual(earliestMs);
+      expect(ms).toBeLessThan(endMs);
+    });
+
+    it("rolls to tonight's window when morning tail has closed", () => {
+      setNow("01:59:30"); // Less than 1 min before 02:00 tail closes
+      const result = pickNextRun(2300, 200, TZ);
+      const ms = result.toMillis();
+      const tonightStartMs = new Date(`${BASE_DATE}T23:00:00Z`).getTime();
+      const tomorrowEndMs = new Date("2024-01-16T02:00:00Z").getTime();
+
+      expect(ms).toBeGreaterThanOrEqual(tonightStartMs);
+      expect(ms).toBeLessThan(tomorrowEndMs);
+    });
+
+    it("schedules for tomorrow night into day after tomorrow when daysAhead is 1", () => {
+      setNow("10:00:00");
+      const result = pickNextRun(2300, 200, TZ, 1);
+      const ms = result.toMillis();
+      const tomorrowStartMs = new Date("2024-01-16T23:00:00Z").getTime();
+      const dayAfterEndMs = new Date("2024-01-17T02:00:00Z").getTime();
+
+      expect(ms).toBeGreaterThanOrEqual(tomorrowStartMs);
+      expect(ms).toBeLessThan(dayAfterEndMs);
+    });
+
+    it("correctly avoids conflicts in an overnight window", () => {
+      setNow("10:00:00");
+      const occupied = [new Date(`${BASE_DATE}T23:30:00Z`).getTime()];
+
+      for (let i = 0; i < 30; i++) {
+        const result = pickNextRun(2300, 200, TZ, 0, {
+          occupied,
+          gapMinutes: 10,
+        });
+        expect(Math.abs(result.toMillis() - occupied[0])).toBeGreaterThanOrEqual(
+          10 * 60_000,
+        );
+      }
+    });
+  });
 });

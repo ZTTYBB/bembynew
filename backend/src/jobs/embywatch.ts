@@ -1000,17 +1000,25 @@ async function playSegment(
       }
       elapsed += wait;
 
-      await embyRequest(serverUrl, '/Sessions/Playing/Progress', {
-        method: 'POST',
-        ...reqOpts(ctx),
-        body: {
-          ItemId: itemId,
-          MediaSourceId: mediaSourceId,
-          PlaySessionId: ctx.playSessionId,
-          PositionTicks: startTicks + elapsed * TICKS_PER_SECOND,
-          IsPaused: false,
-        },
-      });
+      try {
+        await embyRequest(serverUrl, '/Sessions/Playing/Progress', {
+          method: 'POST',
+          ...reqOpts(ctx),
+          body: {
+            ItemId: itemId,
+            MediaSourceId: mediaSourceId,
+            PlaySessionId: ctx.playSessionId,
+            PositionTicks: startTicks + elapsed * TICKS_PER_SECOND,
+            IsPaused: false,
+          },
+        });
+      } catch (err) {
+        if (ctx.signal?.aborted) throw err;
+        console.warn(
+          '[embywatch] Progress report failed (non-fatal):',
+          safeEmbyError(err, credentialSecrets(ctx.proxyUrl, ctx.token)),
+        );
+      }
     }
   } catch (err) {
     // Cancelled (or failed) mid-playback: still tell Emby we stopped, otherwise

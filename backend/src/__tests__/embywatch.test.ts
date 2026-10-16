@@ -1198,3 +1198,32 @@ describe('embywatch PlaySessionId compliance (Emby 4.9+ support)', () => {
   });
 });
 
+describe('embywatch Progress heartbeat fault tolerance', () => {
+  it('does not abort playback when /Sessions/Playing/Progress returns 409 conflict', async () => {
+    routeFetch(206);
+
+    const originalImpl = mockUndiciFetch.getMockImplementation();
+    mockUndiciFetch.mockImplementation((url: string, init?: any) => {
+      if (url.includes('/Sessions/Playing/Progress')) {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          statusText: 'Conflict',
+          text: vi.fn().mockResolvedValue(JSON.stringify({ Message: 'playback_lease_inactive' })),
+        });
+      }
+      return originalImpl!(url, init);
+    });
+
+    const result = await runEmbywatch('https://emby.example.com', baseConfig);
+    expect(result.title).toBe('Ep');
+    expect(result.watchedSeconds).toBe(1);
+
+    const stoppedCall = mockUndiciFetch.mock.calls.some(
+      c => typeof c[0] === 'string' && c[0].endsWith('/Sessions/Playing/Stopped'),
+    );
+    expect(stoppedCall).toBe(true);
+  });
+});
+
+
