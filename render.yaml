@@ -1,17 +1,33 @@
+# Render blueprint. Deploying from here needs a paid instance type -- see below.
 services:
   - type: web
     name: bembynew
     runtime: docker
-    plan: free
+    # A persistent disk can only be attached to a PAID Render service, and a free
+    # instance spins down when idle. Neither suits this app: its whole job is
+    # running scheduled tasks around the clock, and without a disk the SQLite
+    # database lives on an ephemeral filesystem and is lost on every restart.
+    # Keep it on a paid plan, or deploy with Docker on your own host instead.
+    plan: starter
+    healthCheckPath: /api/health
     envVars:
       - key: ADMIN_USERNAME
         value: admin
+      # Render generates both of these; read them from the dashboard.
       - key: ADMIN_PASSWORD
         generateValue: true
       - key: JWT_SECRET
         generateValue: true
+      # Back this one up. It encrypts the stored Telegram sessions and API
+      # credentials; lose it and every account has to be authenticated again.
       - key: BEMBY_DATA_KEY
         generateValue: true
+      # Scheduled jobs are timed in this zone. Change it to wherever you are.
+      - key: TZ
+        value: Asia/Shanghai
+      # One-click upgrade is not available here: it needs a Watchtower container
+      # with the Docker socket, which Render does not give you. Settings will show
+      # the manual command instead.
     disk:
       name: bemby-data
       mountPath: /app/data
