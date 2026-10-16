@@ -79,6 +79,7 @@ export const ALLOWED_KEYS = [
   "check_daily_run",
   "default_ua",
   "default_play_duration",
+  "default_play_duration_max",
   "default_device_name",
   "ai_model",
   "ai_default_model_id",
@@ -460,6 +461,20 @@ router.put("/", (req, res) => {
         error: "Default playback duration exceeds an inherited upper bound; update the affected tasks or templates first",
         conflicts: conflicts.slice(0, 20), total: conflicts.length,
       });
+      return;
+    }
+  }
+  if ("default_play_duration_max" in updates && hasEmbyDuration(updates.default_play_duration_max)) {
+    const syntaxError = validateEmbyDurations({ playDurationMax: updates.default_play_duration_max });
+    if (syntaxError) {
+      res.status(400).json({ error: syntaxError });
+      return;
+    }
+    const currentMin = updates.default_play_duration ?? (
+      db.prepare("SELECT value FROM settings WHERE key = 'default_play_duration'").get() as { value: string } | undefined
+    )?.value ?? 300;
+    if (Number(updates.default_play_duration_max) < Number(currentMin)) {
+      res.status(400).json({ error: "default_play_duration_max must not be less than default_play_duration" });
       return;
     }
   }

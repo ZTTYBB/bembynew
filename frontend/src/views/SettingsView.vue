@@ -1470,7 +1470,7 @@
           <div class="card-header-left">
             <i class="fa-solid fa-play section-icon"></i>
             <span class="card-section-title">{{ t("settings.embyDefaults") }}</span>
-            <span class="section-summary">默认播放时长: {{ form.default_play_duration }}s</span>
+            <span class="section-summary">{{ embyDurationSummary }}</span>
           </div>
           <div class="card-header-right">
             <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.embyDefaults }"></i>
@@ -1490,21 +1490,39 @@
                 class="form-input"
                 type="number"
                 min="30"
+                placeholder="300"
               />
             </div>
             <div class="form-group">
               <label class="form-label">{{
-                t("settings.labelDeviceName")
+                t("settings.labelPlayDurationMax")
               }}</label>
               <input
-                v-model.trim="form.default_device_name"
+                v-model.number="form.default_play_duration_max"
                 class="form-input"
-                placeholder="Mac"
+                type="number"
+                :min="form.default_play_duration || 30"
+                placeholder="600"
               />
-              <p style="font-size: 12px; color: #888; margin: 4px 0 0">
-                {{ t("settings.deviceNameVars") }}
-              </p>
             </div>
+          </div>
+          <div style="margin: -6px 0 14px; font-size: 12px; color: #409eff; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>{{ embyDurationPreview }}</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{
+              t("settings.labelDeviceName")
+            }}</label>
+            <input
+              v-model.trim="form.default_device_name"
+              class="form-input"
+              placeholder="Mac"
+            />
+            <p style="font-size: 12px; color: #888; margin: 4px 0 0">
+              {{ t("settings.deviceNameVars") }}
+            </p>
           </div>
 
           <div class="form-group">
@@ -1762,7 +1780,7 @@
           <div class="card-header-left">
             <i class="fa-solid fa-robot section-icon"></i>
             <span class="card-section-title">{{ t("settings.aiSection") }}</span>
-            <span class="section-summary">{{ form.ai_api_key ? (form.ai_model || '已配置') : '未配置' }}</span>
+            <span class="section-summary">{{ aiSummaryText }}</span>
           </div>
           <div class="card-header-right">
             <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.ai }"></i>
@@ -2354,6 +2372,7 @@ const form = reactive({
   check_daily_run: true,
   default_ua: "",
   default_play_duration: 300,
+  default_play_duration_max: "" as number | string,
   default_device_name: "Mac",
   ai_model: "",
   ai_default_model_id: "",
@@ -2370,6 +2389,43 @@ const embyError = ref("");
 const aiSaving = ref(false);
 const aiMsg = ref("");
 const aiError = ref("");
+
+const aiSummaryText = computed(() => {
+  if (aiSuppliersLoading.value) return t("common.loading");
+  if (!suppliers.value || suppliers.value.length === 0) {
+    return "未配置";
+  }
+  let modelName = form.ai_model;
+  if (!modelName && form.ai_default_model_id) {
+    const found = suppliers.value
+      .flatMap((s) => s.models)
+      .find((m) => String(m.id) === String(form.ai_default_model_id));
+    if (found) modelName = found.model_id;
+  }
+  const count = suppliers.value.length;
+  if (modelName) {
+    return `${modelName} (${count}个服务商)`;
+  }
+  return `已配置 (${count}个服务商)`;
+});
+
+const embyDurationSummary = computed(() => {
+  const min = Number(form.default_play_duration) || 300;
+  const max = Number(form.default_play_duration_max);
+  if (max && max >= min) {
+    return `默认播放时长: ${min} ～ ${max}s (随机)`;
+  }
+  return `默认播放时长: ${min}s`;
+});
+
+const embyDurationPreview = computed(() => {
+  const min = Number(form.default_play_duration) || 300;
+  const max = Number(form.default_play_duration_max);
+  if (max && max >= min) {
+    return `当前生效：每次执行在 ${min} ～ ${max} 秒之间随机播放，模拟真人真实观看习惯，防范平台识别。`;
+  }
+  return `当前生效：固定约 ${min} 秒播放（建议配置最大时长启用真人随机区间，避免被识别）。`;
+});
 
 const suppliers = ref<AiSupplier[]>([]);
 const aiSuppliersLoading = ref(false);
@@ -3342,6 +3398,7 @@ onMounted(async () => {
     accountDisplayWithTgAvatar.value = s.account_display_with_tg_avatar === "true";
     scheduleSeparatePageSetting.value = s.schedule_separate_page === "true";
     form.default_play_duration = Number(s.default_play_duration ?? 300);
+    form.default_play_duration_max = s.default_play_duration_max ? Number(s.default_play_duration_max) : "";
     form.default_device_name = s.default_device_name ?? "Mac";
     form.ai_model = s.ai_model ?? "";
     form.ai_default_model_id = s.ai_default_model_id ?? "";
@@ -3610,6 +3667,7 @@ async function saveEmby() {
     const saved = await settingsApi.update({
       default_ua: form.default_ua,
       default_play_duration: String(form.default_play_duration),
+      default_play_duration_max: form.default_play_duration_max ? String(form.default_play_duration_max) : "",
       default_device_name: form.default_device_name,
       ua_presets: JSON.stringify(uaPresets.value),
     });

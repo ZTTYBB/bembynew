@@ -4,6 +4,30 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.6
+
+修复 AI 服务商多节点状态摘要显示、新增全局 Emby 观看默认时长真人随机区间防风控，并清理自建面板外部社区入口。
+
+Fixes multi-provider AI badge display, adds global human-like playback duration randomization to prevent bot detection on Emby servers, and removes external community links for private self-hosted deployments.
+
+### 中文
+
+**功能与体验**
+
+- **全局 Emby 默认播放时长支持真人随机区间** -- 设置页「EMBY 观看默认值」新增「默认最大播放时长 (秒)」配置项与实时自然语言解析提示。当任务未单独覆盖最大播放时长时，自动继承全局默认最大值，并在每次执行时在最小与最大值之间随机生成播放时长（例如 300 ～ 600 秒），打破千篇一律的固定 5 分钟机器人打卡行为特征，彻底防范 Emby 服务端与反作弊审计识别。
+- **AI 服务商多节点状态智能摘要** -- 修复新版多服务商架构下折叠卡片标题栏摘要仍然读取旧版单 key 导致始终死锁显示「未配置」的问题；现已精准联动 `suppliers` 列表与默认模型，直观展示当前生效模型与服务商数量（如 `grok-4.5 (2个服务商)`）。
+- **自建私有化面板精简** -- 移除侧边栏底部的 Telegram 交流群与 GitHub 外部链接，并将左上角 LOGO 品牌改为内部原生呈现，保持私有部署环境的纯净与安全。
+
+### English
+
+**Features & Improvements**
+
+- **Global Emby Playback Duration Randomization** -- Added a "Default Max Play Duration (seconds)" configuration and instant preview under Settings → Emby Defaults. When jobs do not specify their own upper bound, they automatically inherit this global ceiling and pick a random duration between min and max (e.g. 300s to 600s) on every run, eliminating rigid bot signatures on Emby servers.
+- **Multi-Provider AI Status Badge** -- Fixed AI card header summary erroneously displaying "Not Configured" under the multi-supplier architecture. It now accurately reflects the active default model and registered supplier count.
+- **Private Self-Hosted UI Cleanup** -- Removed external Telegram community and GitHub links from the sidebar footer, and decoupled the brand header logo link for clean private deployments.
+
+---
+
 ## v1.0.5
 
 重点增强 Emby 4.9+ 播放兼容性、修复跨午夜调度与数据库并发写锁，并全面重构设置页面排版与任务执行反馈体验。

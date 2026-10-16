@@ -54,6 +54,11 @@ export function resolveEmbyDefaultPlayDuration(value: unknown): number {
   return isValidEmbyDuration(value) ? Number(value) : DEFAULT_PLAY_DURATION_SECONDS;
 }
 
+/** Resolves optional default max play duration. Returns undefined if not set. */
+export function resolveEmbyDefaultPlayDurationMax(value: unknown): number | undefined {
+  return isValidEmbyDuration(value) ? Number(value) : undefined;
+}
+
 /** Reject invalid new values while leaving absent fields on their defaults. */
 export function validateEmbyDurations(config: unknown): string | null {
   if (!config || typeof config !== "object" || Array.isArray(config)) return null;

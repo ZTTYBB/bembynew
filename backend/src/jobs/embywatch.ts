@@ -7,6 +7,7 @@ import { expandCommand } from './checkin';
 import {
   hasEmbyDuration,
   resolveEmbyDefaultPlayDuration,
+  resolveEmbyDefaultPlayDurationMax,
   validateEmbyDurations,
 } from './embyTemplate';
 
@@ -1446,10 +1447,17 @@ async function runEmbywatchSession(
   const ua = config.userAgent ?? getSetting('default_ua') ?? DEFAULT_UA;
   // Neither the job's own value nor the system default is trusted to be a usable
   // number -- see positiveSeconds. A range above the floor re-rolls per run.
+  const defaultPlayDuration = resolveEmbyDefaultPlayDuration(getSetting('default_play_duration'));
+  const defaultPlayDurationMax = resolveEmbyDefaultPlayDurationMax(getSetting('default_play_duration_max'));
+  const effectiveMin = config.playDuration ?? defaultPlayDuration;
+  let effectiveMax = config.playDurationMax;
+  if (!hasEmbyDuration(effectiveMax) && defaultPlayDurationMax !== undefined && defaultPlayDurationMax >= Number(effectiveMin)) {
+    effectiveMax = defaultPlayDurationMax;
+  }
   const playDuration = resolvePlaybackBudget(
-    config.playDuration,
-    config.playDurationMax,
-    resolveEmbyDefaultPlayDuration(getSetting('default_play_duration')),
+    effectiveMin,
+    effectiveMax,
+    defaultPlayDuration,
   );
   const deviceName = resolveDeviceName(getSetting('default_device_name') ?? 'Yamby', config.username);
 
