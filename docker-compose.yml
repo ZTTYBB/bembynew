@@ -1,0 +1,21 @@
+services:
+  bemby:
+    image: ghcr.io/zttybb/bembynew:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD to a strong password}
+      # Secret used to sign login tokens. Required: set to a long random string,
+      # e.g. `openssl rand -hex 32`. Compose refuses to start if it is unset.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a long random string, e.g. openssl rand -hex 32}
+      # Optional but recommended: encrypt Telegram credentials at rest.
+      BEMBY_DATA_KEY: ${BEMBY_DATA_KEY:-}
+      # Optional: set a timezone, e.g. TZ=Asia/Shanghai (defaults to UTC)
+      TZ: ${TZ:-UTC}

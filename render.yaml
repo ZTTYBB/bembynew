@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: bembynew
+    runtime: docker
+    plan: free
+    envVars:
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: BEMBY_DATA_KEY
+        generateValue: true
+    disk:
+      name: bemby-data
+      mountPath: /app/data
+      sizeGB: 1
