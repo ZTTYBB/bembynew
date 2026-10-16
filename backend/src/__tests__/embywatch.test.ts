@@ -1149,3 +1149,52 @@ describe('embywatch multiple backup addresses', () => {
     expect(calledUrls().every((u) => u.startsWith(PRIMARY))).toBe(true);
   });
 });
+
+describe('embywatch PlaySessionId compliance (Emby 4.9+ support)', () => {
+  it('sends a valid 32-character hex GUID for PlaySessionId and adopts server-allocated ID from PlaybackInfo', async () => {
+    const SERVER_SESSION_ID = '382a5c9284fa4f40940bf87e248b111a';
+    routeFetch(206);
+
+    const originalImpl = mockUndiciFetch.getMockImplementation();
+    mockUndiciFetch.mockImplementation((url: string, init?: any) => {
+      if (url.includes('/PlaybackInfo')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          text: vi.fn().mockResolvedValue(JSON.stringify({
+            PlaySessionId: SERVER_SESSION_ID,
+            MediaSources: [{ Id: 's1' }],
+          })),
+        });
+      }
+      return originalImpl!(url, init);
+    });
+
+    await runEmbywatch('https://emby.example.com', baseConfig);
+
+    const playingCall = mockUndiciFetch.mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].endsWith('/Sessions/Playing'),
+    );
+    expect(playingCall).toBeDefined();
+    const body = JSON.parse((playingCall![1] as any).body);
+    expect(body.PlaySessionId).toBe(SERVER_SESSION_ID);
+    expect(/^[0-9a-f]{32}$/.test(body.PlaySessionId)).toBe(true);
+  });
+
+  it('generates a standard 32-char lowercase hex GUID when PlaybackInfo does not provide one', async () => {
+    routeFetch(206);
+
+    await runEmbywatch('https://emby.example.com', baseConfig);
+
+    const playingCall = mockUndiciFetch.mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].endsWith('/Sessions/Playing'),
+    );
+    expect(playingCall).toBeDefined();
+    const body = JSON.parse((playingCall![1] as any).body);
+    expect(body.PlaySessionId).toBeDefined();
+    expect(body.PlaySessionId.startsWith('bemby-')).toBe(false);
+    expect(/^[0-9a-f]{32}$/.test(body.PlaySessionId)).toBe(true);
+  });
+});
+

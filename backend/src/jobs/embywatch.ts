@@ -1,5 +1,6 @@
 import { Agent, ProxyAgent, fetch as undiciFetch } from 'undici';
 import { lookup } from 'node:dns';
+import { randomUUID } from 'node:crypto';
 import { db } from '../db/database';
 import type { EmbywatchConfig, EmbywatchEpisode, EmbywatchLog, RealWatchNote } from '../types';
 import { expandCommand } from './checkin';
@@ -903,6 +904,14 @@ async function buildStreamer(serverUrl: string, ctx: PlayCtx, seg: Segment): Pro
   };
 }
 
+/**
+ * Generates a standard 32-character lowercase hex string compliant with Emby's
+ * GUID session validation model (introduced and enforced in Emby 4.9+).
+ */
+export function generatePlaySessionId(): string {
+  return randomUUID().replace(/-/g, '').toLowerCase();
+}
+
 /** POST /Sessions/Playing → progress loop (+ Real Watch byte streaming) → /Sessions/Playing/Stopped. */
 async function playSegment(
   serverUrl: string,
@@ -914,13 +923,34 @@ async function playSegment(
   const { itemId, mediaSourceId } = seg;
   const startTicks = startSeconds * TICKS_PER_SECOND;
 
+  // Emby 4.9+ validates PlaySessionId strictly as a 32-hex GUID and expects the
+  // ID returned by POST /Items/{id}/PlaybackInfo when available.
+  let playSessionId = generatePlaySessionId();
+  try {
+    const info = await embyRequest<any>(serverUrl, `/Items/${itemId}/PlaybackInfo?UserId=${ctx.userId}`, {
+      method: 'POST',
+      ...reqOpts(ctx),
+      body: { DeviceProfile: { MaxStreamingBitrate: 140_000_000 } },
+    });
+    if (typeof info?.PlaySessionId === 'string' && /^[0-9a-fA-F-]{32,36}$/.test(info.PlaySessionId)) {
+      playSessionId = info.PlaySessionId.replace(/-/g, '').toLowerCase();
+    }
+  } catch {
+    // If PlaybackInfo fails or is unsupported by an older/custom server, proceed
+    // with the generated standard 32-hex GUID
+  }
+
+  // Update ctx.playSessionId for this segment so byte streaming, progress reports,
+  // and stopped notifications all reference the matching valid session
+  ctx.playSessionId = playSessionId;
+
   await embyRequest(serverUrl, '/Sessions/Playing', {
     method: 'POST',
     ...reqOpts(ctx),
     body: {
       ItemId: itemId,
       MediaSourceId: mediaSourceId,
-      PlaySessionId: ctx.playSessionId,
+      PlaySessionId: playSessionId,
       PositionTicks: startTicks,
       IsPaused: false,
       CanSeek: true,
@@ -1470,7 +1500,7 @@ async function runEmbywatchSession(
     userId,
     deviceName,
     proxyUrl,
-    playSessionId: `bemby-${Date.now()}`,
+    playSessionId: generatePlaySessionId(),
     realWatch: config.realWatch === true,
     signal,
   };
