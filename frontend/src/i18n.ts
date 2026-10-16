@@ -3173,14 +3173,16 @@ export function setLocale(l: Locale) {
   localStorage.setItem("bemby-locale", l);
 }
 
-export function t(key: string): string {
+export function t(key: string, params?: Record<string, unknown>): string {
   const parts = key.split(".");
   let cur: unknown = messages[locale.value];
   for (const p of parts) {
     if (cur == null || typeof cur !== "object") return key;
     cur = (cur as Record<string, unknown>)[p];
   }
-  return typeof cur === "string" ? cur : key;
+  if (typeof cur !== "string") return key;
+  if (!params) return cur;
+  return cur.replace(/\{(\w+)\}/g, (_, k) => (params[k] !== undefined ? String(params[k]) : `{${k}}`));
 }
 
 export function ta(key: string): string[] {

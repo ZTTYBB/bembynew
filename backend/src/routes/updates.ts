@@ -125,7 +125,7 @@ function manualCommand(): string {
   return `docker compose pull && docker compose up -d`;
 }
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   const watchtower = watchtowerConfig();
   const base = {
     version: RUNNING_VERSION,
@@ -154,7 +154,8 @@ router.get('/', async (_req, res) => {
     return;
   }
 
-  if (!cache || Date.now() - cache.at > CACHE_TTL_MS) {
+  const force = req.query.refresh === '1' || req.query.refresh === 'true';
+  if (force || !cache || Date.now() - cache.at > CACHE_TTL_MS) {
     cache = { at: Date.now(), result: await checkForUpdate() };
   }
   const result = cache.result;
@@ -183,6 +184,7 @@ router.post('/upgrade', async (_req, res) => {
   try {
     const answer = await withTimeout(
       fetch(`${watchtower.url}/v1/update`, {
+        method: 'POST',
         headers: { Authorization: `Bearer ${watchtower.token}` },
       }),
       UPGRADE_TIMEOUT_MS,
