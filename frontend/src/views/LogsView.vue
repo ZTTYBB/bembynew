@@ -1179,6 +1179,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import DebugPanel from "../components/DebugPanel.vue";
 import PaginationBar from "../components/PaginationBar.vue";
 import {
@@ -1200,6 +1201,7 @@ import { usePersistedRef } from "../composables/usePersistedRef";
 import { debounce } from "../composables/useDebounce";
 import { createLatestRequest } from "../utils/latestRequest";
 
+const route = useRoute();
 const logs = ref<Log[]>([]);
 const jobs = ref<Job[]>([]);
 const filterJobId = usePersistedRef<number | "">("bemby:logs:filterJobId", "");
@@ -1342,6 +1344,12 @@ const retriedStepNums = computed(() => {
 });
 
 onMounted(() => {
+  if (route.query.jobId) {
+    const jId = Number(route.query.jobId);
+    if (!isNaN(jId) && jId > 0) {
+      filterJobId.value = jId;
+    }
+  }
   void load();
   void dependencyRequest.run(async ({ signal, commit }) => {
     const [jobList, settings, suppliers] = await Promise.all([
@@ -1357,6 +1365,20 @@ onMounted(() => {
     });
   });
 });
+
+watch(
+  () => route.query.jobId,
+  (newJobId) => {
+    if (newJobId) {
+      const jId = Number(newJobId);
+      if (!isNaN(jId) && jId > 0) {
+        filterJobId.value = jId;
+        page.value = 1;
+        void load();
+      }
+    }
+  },
+);
 
 async function load() {
   return listRequest.run(async ({ signal, isCurrent, commit }) => {

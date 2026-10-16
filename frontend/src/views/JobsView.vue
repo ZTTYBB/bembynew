@@ -117,6 +117,7 @@
                   <button class="btn btn-sm btn-success btn-icon" :disabled="running.has(j.id)" :title="t('common.run')" @click="runNow(j.id)">
                     <i class="fa-solid fa-play"></i>
                   </button>
+                  <button class="btn btn-sm btn-ghost btn-icon" :title="t('logs.title')" @click="goToJobLogs(j.id)"><i class="fa-solid fa-file-lines"></i></button>
                   <button class="btn btn-sm btn-ghost btn-icon" :title="t('common.edit')" @click="openEdit(j)"><i class="fa-solid fa-pen"></i></button>
                   <button class="btn btn-sm btn-ghost btn-icon" :title="t('common.duplicate')" @click="openDuplicate(j)"><i class="fa-solid fa-copy"></i></button>
                   <button class="btn btn-sm btn-ghost btn-icon" :title="t('jobs.markSuccess')" @click="openOutcome(j, 'success')"><i class="fa-solid fa-check"></i></button>
@@ -237,7 +238,25 @@
             </div>
             <div class="form-group">
               <label class="form-label">{{ t('jobs.labelEmbyPass') }}</label>
-              <input v-model="embyCfg.password" class="form-input" type="password" placeholder="Password" autocomplete="new-password" />
+              <div style="position:relative;display:flex;align-items:center">
+                <input
+                  v-model="embyCfg.password"
+                  class="form-input"
+                  :type="showEmbyPassword ? 'text' : 'password'"
+                  placeholder="Password"
+                  autocomplete="new-password"
+                  style="padding-right:36px"
+                />
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm btn-icon"
+                  style="position:absolute;right:4px;color:#888"
+                  :title="showEmbyPassword ? '隐藏密码' : '显示密码'"
+                  @click="showEmbyPassword = !showEmbyPassword"
+                >
+                  <i :class="showEmbyPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                </button>
+              </div>
             </div>
           </div>
         </template>
@@ -1090,7 +1109,7 @@
           </div>
         </template>
 
-        <div class="form-row">
+        <div class="form-row" style="margin-bottom:6px">
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelWindowStart') }}</label>
             <input v-model.number="form.scheduleWindowStart" class="form-input" type="number" placeholder="1400" />
@@ -1099,6 +1118,10 @@
             <label class="form-label">{{ t('jobs.labelWindowEnd') }}</label>
             <input v-model.number="form.scheduleWindowEnd" class="form-input" type="number" placeholder="1600" />
           </div>
+        </div>
+        <div v-if="windowTimeHint" style="font-size:12px;color:#2e9e5b;margin:-2px 0 12px;display:flex;align-items:center;gap:6px">
+          <i class="fa-solid fa-clock"></i>
+          <span>{{ windowTimeHint }}</span>
         </div>
 
         <!-- checkin-specific fields (hidden when template controls them) -->
@@ -1330,6 +1353,9 @@
         <button class="action-sheet-btn" :disabled="running.has(actionMenuJob.id)" @click="runNow(actionMenuJob.id); actionMenuJob = null">
           <i class="fa-solid fa-play"></i> {{ t('common.run') }}
         </button>
+        <button class="action-sheet-btn" @click="goToJobLogs(actionMenuJob.id); actionMenuJob = null">
+          <i class="fa-solid fa-file-lines"></i> {{ t('logs.title') }}
+        </button>
         <button class="action-sheet-btn" @click="openEdit(actionMenuJob); actionMenuJob = null">
           <i class="fa-solid fa-pen"></i> {{ t('common.edit') }}
         </button>
@@ -1385,6 +1411,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
 import { jobsApi, accountsApi, settingsApi, logsApi, templatesApi, type Job, type JobFacets, type JobTemplate, type Account, type Settings, type UAPreset, type EmbywatchConfig, type AutoregConfig, type CheckinConfig } from '../api/client';
 import { advancedActionOptions, defaultWorkflowAction, isAdvancedAction, workflowToConfig, type AdvancedActionType, type CustomAction, type CustomConfig } from '../api/automation';
 import WorkflowActionsEditor from '../components/WorkflowActionsEditor.vue';
@@ -1503,7 +1530,13 @@ const botUrlTplOptions = computed(() => {
   return [...botVals, ...tplVals];
 });
 
-const showLastSuccess = usePersistedRef<boolean>('bemby:jobs:showLastSuccess', false);
+const router = useRouter();
+const showEmbyPassword = ref(false);
+const showLastSuccess = usePersistedRef<boolean>('bemby:jobs:showLastSuccess', true);
+
+function goToJobLogs(jobId: number) {
+  router.push({ path: '/logs', query: { jobId: String(jobId) } });
+}
 const sortKey = usePersistedRef<string>('bemby:jobs:sortKey', '');
 const sortDir = usePersistedRef<'asc' | 'desc'>('bemby:jobs:sortDir', 'asc');
 const actionMenuJob = ref<Job | null>(null);
@@ -1623,6 +1656,23 @@ const form = reactive({
   firstRunMaxDays: 0,
   rerunOnRestart: false,
   exclusiveAccount: false,
+});
+
+const windowTimeHint = computed(() => {
+  const s = form.scheduleWindowStart;
+  const e = form.scheduleWindowEnd;
+  if (s == null || e == null || isNaN(s) || isNaN(e)) return '';
+  const fmt = (n: number) => {
+    const h = String(Math.floor(n / 100)).padStart(2, '0');
+    const m = String(n % 100).padStart(2, '0');
+    return `${h}:${m}`;
+  };
+  const sFmt = fmt(s);
+  const eFmt = fmt(e);
+  if (s > e) {
+    return `${t('jobs.colWindow')}: ${sFmt} ～ 次日 ${eFmt} (跨午夜调度)`;
+  }
+  return `${t('jobs.colWindow')}: ${sFmt} ～ ${eFmt}`;
 });
 
 const linkedTemplate = computed(() => templates.value.find(t => t.id === form.templateId) ?? null);
@@ -2944,6 +2994,8 @@ function stopRunning(jobId: number) {
   running.value = new Set(running.value);
   const timer = pollTimers.get(jobId);
   if (timer) { clearTimeout(timer); pollTimers.delete(jobId); }
+  loadJobs().catch(() => {});
+  loadStatus().catch(() => {});
 }
 
 function schedulePoll(jobId: number) {

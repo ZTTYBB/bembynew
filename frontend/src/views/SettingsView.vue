@@ -1,15 +1,31 @@
 <template>
   <div>
-    <div class="page-header">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
       <h2 class="page-title">{{ t("settings.title") }}</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-secondary" @click="expandAllSections">
+          <i class="fa-solid fa-angles-down"></i> 全部展开
+        </button>
+        <button class="btn btn-sm btn-ghost" @click="collapseAllSections">
+          <i class="fa-solid fa-angles-up"></i> 全部折叠
+        </button>
+      </div>
     </div>
 
     <div class="settings-grid">
       <!-- System defaults -->
-      <div class="card s-col-4">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.sysDefaults") }}</div>
-
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.sysDefaults }">
+        <div class="card-header-toggle" @click="toggleSection('sysDefaults')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-sliders section-icon"></i>
+            <span class="card-section-title">{{ t("settings.sysDefaults") }}</span>
+            <span class="section-summary">{{ form.default_timezone }} · 重试: {{ form.default_max_retry }}次</span>
+          </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.sysDefaults }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.sysDefaults" class="card-body">
           <div v-if="saveMsg" class="success-msg">{{ saveMsg }}</div>
           <div v-if="saveError" class="error-msg">{{ saveError }}</div>
 
@@ -60,11 +76,18 @@
       </div>
 
       <!-- TG Notifications -->
-      <div class="card s-col-4">
-        <div class="card-body">
-          <div class="card-section-title">
-            {{ t("settings.notifySection") }}
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.notify }">
+        <div class="card-header-toggle" @click="toggleSection('notify')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-bell section-icon"></i>
+            <span class="card-section-title">{{ t("settings.notifySection") }}</span>
+            <span class="section-summary">{{ notifyBot.configured ? (notifyBot.ok ? `@${notifyBot.username}` : '配置异常') : '未配置' }}</span>
           </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.notify }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.notify" class="card-body">
           <p style="font-size: 12px; color: #888; margin: 0 0 12px">
             {{ t("settings.notifyHint") }}
           </p>
@@ -253,9 +276,18 @@
       </div>
 
       <!-- Cloudflare solver -->
-      <div class="card s-col-4">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.cfSolver.title") }}</div>
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.cfSolver }">
+        <div class="card-header-toggle" @click="toggleSection('cfSolver')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-globe section-icon"></i>
+            <span class="card-section-title">{{ t("settings.cfSolver.title") }}</span>
+            <span class="section-summary">{{ cfStatus?.installed ? `已安装 (v${cfStatus.version || 'CloakBrowser'})` : '未安装' }}</span>
+          </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.cfSolver }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.cfSolver" class="card-body">
           <p style="font-size: 12px; color: #888; margin: 0 0 12px">
             {{ t("settings.cfSolver.hint") }}
           </p>
@@ -605,10 +637,18 @@
       </div>
 
       <!-- Admin credentials -->
-      <div class="card s-col-4">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.adminCreds") }}</div>
-
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.adminCreds }">
+        <div class="card-header-toggle" @click="toggleSection('adminCreds')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-user-shield section-icon"></i>
+            <span class="card-section-title">{{ t("settings.adminCreds") }}</span>
+            <span class="section-summary">管理员账户与密码</span>
+          </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.adminCreds }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.adminCreds" class="card-body">
           <div v-if="credMsg" class="success-msg">{{ credMsg }}</div>
           <div v-if="credError" class="error-msg">{{ credError }}</div>
 
@@ -679,11 +719,18 @@
       </div>
 
       <!-- General settings -->
-      <div class="card s-col-6">
-        <div class="card-body">
-          <div class="card-section-title">
-            {{ t("settings.generalSection") }}
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.general }">
+        <div class="card-header-toggle" @click="toggleSection('general')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-gear section-icon"></i>
+            <span class="card-section-title">{{ t("settings.generalSection") }}</span>
+            <span class="section-summary">TG API 凭据 · 界面偏好</span>
           </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.general }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.general" class="card-body">
 
           <!-- Telegram API credentials -->
           <div class="settings-subsection">
@@ -898,11 +945,18 @@
       </div>
 
       <!-- Proxies -->
-      <div class="card s-col-6">
-        <div class="card-body">
-          <div class="card-section-title">
-            {{ t("settings.proxiesSection") }}
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.proxies }">
+        <div class="card-header-toggle" @click="toggleSection('proxies')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-shield-halved section-icon"></i>
+            <span class="card-section-title">{{ t("settings.proxiesSection") }}</span>
+            <span class="section-summary">{{ proxies.length }} 个代理</span>
           </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.proxies }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.proxies" class="card-body">
           <p style="font-size: 12px; color: #888; margin: 0 0 12px">
             {{ t("settings.proxiesHint") }}
           </p>
@@ -1189,11 +1243,18 @@
       </div>
 
       <!-- TG App Clients -->
-      <div class="card s-col-6">
-        <div class="card-body">
-          <div class="card-section-title">
-            {{ t("settings.appClientsSection") }}
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.appClients }">
+        <div class="card-header-toggle" @click="toggleSection('appClients')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-mobile-screen section-icon"></i>
+            <span class="card-section-title">{{ t("settings.appClientsSection") }}</span>
+            <span class="section-summary">官方客户端平台伪装</span>
           </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.appClients }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.appClients" class="card-body">
           <p style="font-size: 12px; color: #888; margin: 0 0 6px">
             {{ t("settings.appClientsHint") }}
           </p>
@@ -1404,10 +1465,18 @@
       </div>
 
       <!-- Emby defaults -->
-      <div class="card s-col-6">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.embyDefaults") }}</div>
-
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.embyDefaults }">
+        <div class="card-header-toggle" @click="toggleSection('embyDefaults')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-play section-icon"></i>
+            <span class="card-section-title">{{ t("settings.embyDefaults") }}</span>
+            <span class="section-summary">默认播放时长: {{ form.default_play_duration }}s</span>
+          </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.embyDefaults }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.embyDefaults" class="card-body">
           <div v-if="embyMsg" class="success-msg">{{ embyMsg }}</div>
           <div v-if="embyError" class="error-msg">{{ embyError }}</div>
 
@@ -1504,12 +1573,18 @@
       </div>
 
       <!-- Import / Export -->
-      <div class="card s-col-6">
-        <div class="card-body">
-          <div class="card-section-title">
-            {{ t("settings.importExport.title") }}
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.importExport }">
+        <div class="card-header-toggle" @click="toggleSection('importExport')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-database section-icon"></i>
+            <span class="card-section-title">{{ t("settings.importExport.title") }}</span>
+            <span class="section-summary">数据备份 · 迁移导入 · 仓库</span>
           </div>
-
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.importExport }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.importExport" class="card-body">
           <div v-if="importMsg" class="success-msg">{{ importMsg }}</div>
           <div v-if="importError" class="error-msg">{{ importError }}</div>
 
@@ -1682,9 +1757,18 @@
       </div>
 
       <!-- AI settings -->
-      <div class="card s-col-12">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.aiSection") }}</div>
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.ai }">
+        <div class="card-header-toggle" @click="toggleSection('ai')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-robot section-icon"></i>
+            <span class="card-section-title">{{ t("settings.aiSection") }}</span>
+            <span class="section-summary">{{ form.ai_api_key ? (form.ai_model || '已配置') : '未配置' }}</span>
+          </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.ai }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.ai" class="card-body">
           <p style="font-size: 12px; color: #888; margin: 0 0 16px">
             {{ t("settings.aiHint") }}
           </p>
@@ -1978,9 +2062,18 @@
       </div>
 
       <!-- Memory -->
-      <div class="card s-col-6">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.memorySection") }}</div>
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.memory }">
+        <div class="card-header-toggle" @click="toggleSection('memory')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-microchip section-icon"></i>
+            <span class="card-section-title">{{ t("settings.memorySection") }}</span>
+            <span class="section-summary">内存占用与进程监控</span>
+          </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.memory }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.memory" class="card-body">
 
           <div v-if="memoryLoading" style="color: #888; font-size: 13px">
             {{ t("common.loading") }}
@@ -2042,9 +2135,18 @@
       </div>
 
       <!-- Updates -->
-      <div class="card s-col-6">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.updateSection") }}</div>
+      <div class="card settings-card" :class="{ 'is-collapsed': !openSections.update }">
+        <div class="card-header-toggle" @click="toggleSection('update')">
+          <div class="card-header-left">
+            <i class="fa-solid fa-cloud-arrow-up section-icon"></i>
+            <span class="card-section-title">{{ t("settings.updateSection") }}</span>
+            <span class="section-summary">{{ updateStatus ? `v${updateStatus.version}` : '检查更新' }}</span>
+          </div>
+          <div class="card-header-right">
+            <i class="fa-solid fa-chevron-down toggle-arrow" :class="{ 'arrow-up': openSections.update }"></i>
+          </div>
+        </div>
+        <div v-show="openSections.update" class="card-body">
 
           <div v-if="updateStatus" class="update-rows">
             <div class="update-row">
@@ -2199,6 +2301,33 @@ import type {
 import { t } from "../i18n";
 import { setAccountDisplayWithTgName } from "../composables/accountDisplay";
 import { setSchedulePageSeparate } from "../composables/schedulePage";
+
+const openSections = reactive<Record<string, boolean>>({
+  sysDefaults: true,
+  notify: false,
+  cfSolver: false,
+  adminCreds: false,
+  general: false,
+  proxies: false,
+  appClients: false,
+  embyDefaults: false,
+  importExport: false,
+  ai: false,
+  memory: false,
+  update: false,
+});
+
+function toggleSection(key: string) {
+  openSections[key] = !openSections[key];
+}
+
+function expandAllSections() {
+  for (const k in openSections) openSections[k] = true;
+}
+
+function collapseAllSections() {
+  for (const k in openSections) openSections[k] = false;
+}
 
 const timezones = [
   "Australia/Sydney",
@@ -4251,30 +4380,78 @@ async function signOutEverywhere() {
 }
 
 .settings-grid {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 20px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.s-col-4 {
-  grid-column: span 4;
+
+.settings-card {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--card-bg, #ffffff);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
-.s-col-6 {
-  grid-column: span 6;
+
+.card-header-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--card-header-bg, #fcfcfd);
+  transition: background 0.15s ease;
 }
-.s-col-12 {
-  grid-column: span 12;
+
+.card-header-toggle:hover {
+  background: var(--card-header-hover, #f8fafc);
 }
-@media (max-width: 960px) {
-  .s-col-4 {
-    grid-column: span 6;
-  }
+
+.settings-card:not(.is-collapsed) .card-header-toggle {
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
 }
-@media (max-width: 640px) {
-  .s-col-4,
-  .s-col-6 {
-    grid-column: span 12;
-  }
+
+.card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.section-icon {
+  font-size: 15px;
+  color: #3b82f6;
+  width: 20px;
+  text-align: center;
+}
+
+.card-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color, #1e293b);
+  margin: 0;
+}
+
+.section-summary {
+  font-size: 12px;
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.08);
+  padding: 2px 10px;
+  border-radius: 12px;
+  margin-left: 4px;
+}
+
+.toggle-arrow {
+  color: #94a3b8;
+  font-size: 13px;
+  transition: transform 0.2s ease;
+}
+
+.toggle-arrow.arrow-up {
+  transform: rotate(180deg);
+  color: #3b82f6;
 }
 
 .proxy-edit-panel {
