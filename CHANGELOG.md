@@ -4,6 +4,50 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.5
+
+重点增强 Emby 4.9+ 播放兼容性、修复跨午夜调度与数据库并发写锁，并全面重构设置页面排版与任务执行反馈体验。
+
+Enhances Emby 4.9+ playback compatibility, fixes cross-midnight scheduling bugs and SQLite concurrency write locks, and completely revamps settings layout and job execution feedback.
+
+### 中文
+
+**功能与体验**
+
+- **设置页面排版全面重构（折叠面板）** -- 解决原 12 列 Grid 布局因卡片高度差异巨大而产生的超大空白空洞问题。全部 12 个设置模块改为带向下箭头的模块化折叠面板，未展开时展示当前配置核心摘要（时区、重试次数、内核版本、代理数量等），并新增顶部「全部展开 / 全部折叠」快捷控制。
+- **任务执行完毕静默对齐** -- 任务在手动执行或队列运行完毕出队后，静默自动拉取刷新列表与调度状态；「上次成功」列常驻开启并展示人性化相对时间（悬停显示精确时间戳），无需弹窗打扰用户。
+- **日志页面直达与联动** -- 任务操作列表新增「查看日志」按钮，日志页支持通过路由参数（`?jobId=xxx`）自动选中目标任务并立即筛选，无需翻阅海量列表查找。
+- **Emby 密码明暗文切换** -- 任务表单中的 Emby 密码框内嵌眼睛图标开关，可在明文与掩码密文之间自由切换，方便核验。
+- **时间窗实时辅助预览** -- 时间窗输入框下方新增实时解析提示（例如输入 `1400` 和 `1600` 即时显示 `14:00 ～ 16:00`，跨午夜如 `2300` 和 `0200` 即时显示 `23:00 ～ 次日 02:00 (跨午夜调度)`）。
+
+**修复**
+
+- **Emby 播放心跳 409 容错** -- 针对 Emby 4.9+ 引入的严格播放租约（Playback Lease）机制，修复向 `/Sessions/Playing/Progress` 发送进度心跳偶发 409 `playback_lease_inactive` 或瞬断时导致整次播放任务被未捕获异常中断的缺陷，将其降级为非致命警告，确保正常上报 Stopped 闭环记录。
+- **跨午夜时间窗调度锁死修复** -- 修复当配置跨天窗口（如 `23:00` 到次日 `02:00`）时，分钟跨度计算出负数导致 `Math.max(1, -1260)` 强转为 1、随机选取退化且避让遍历失效的致命缺陷；重构为跨日期时间段计算，支持凌晨尾部、白天跨天与深夜前半段三种场景的智能调度。
+- **SQLite `busy_timeout` 并发锁优化** -- 为 SQLite 增加 `busy_timeout = 5000` 配置，从底层排队缓冲多任务并发写日志或状态更新时的文件锁竞争，根除 `SqliteError: database is locked`。
+- **Emby 4.9+ PlaySessionId GUID 兼容** -- 严格遵循 32 位 Hex GUID 格式要求，并优先采用 PlaybackInfo 返回的服务端分配 ID。
+- **Watchtower 系统更新端点** -- 修复一键升级调用端点请求方法为 POST，修复国际化语言参数插值。
+
+### English
+
+**Features & Improvements**
+
+- **Settings Page Layout Redesign (Collapsible Cards)** -- Replaced the rigid 3-column grid with clean collapsible accordion panels. Each module shows a concise summary badge (timezone, retries, browser status, proxies) and a down-arrow toggle, eliminating massive vertical empty gaps. Added "Expand All / Collapse All" top buttons.
+- **Silent Job Completion Refresh** -- When manual runs or queue tasks finish, the job list silently refreshes in the background. The "Last Success" column is now enabled by default with relative time display and exact tooltip timestamps.
+- **Direct Job Log Navigation** -- Added a "View Logs" button to each job row, and enhanced Logs view to parse `?jobId=xxx` query parameter for instant filtering.
+- **Emby Password Visibility Toggle** -- Added an eye icon button in the Emby password field to toggle password visibility.
+- **Schedule Window Helper Preview** -- Displays an instant human-readable preview under time window inputs (e.g. `14:00 ～ 16:00` or `23:00 ～ Next Day 02:00 (Overnight)`).
+
+**Fixes**
+
+- **Emby Progress Heartbeat 409 Tolerance** -- Emby 4.9+ playback lease 409 conflicts on `/Sessions/Playing/Progress` are now safely handled as non-fatal warnings without crashing playback sessions.
+- **Cross-Midnight Scheduling Fix** -- Fixed negative minute spans on overnight windows (e.g. 23:00 to 02:00) that previously degraded random selection to fixed times and stalled schedule avoidance.
+- **SQLite Concurrency Busy Timeout** -- Configured `busy_timeout = 5000` on SQLite database initialization to eliminate transient `database is locked` errors during concurrent job execution and logging.
+- **Emby 4.9+ PlaySessionId Compliance** -- Formats session ID as standard 32-char hex GUID and adopts server-allocated ID from PlaybackInfo.
+- **Watchtower Update Endpoint** -- Fixed HTTP method to POST and interpolated i18n parameters.
+
+---
+
 ## v1.0.0
 
 第一个 1.0 版本：小程序（Mini App）支持、网页子步骤、注册任务增强、计划列表与批量资料生成，Cloudflare 验证改用 CloakBrowser，并完成一轮安全加固。
