@@ -590,8 +590,9 @@ const zh = {
     libraryHint: "优先仅从指定媒体库中挑选内容（含续播/顺序播放），可填写媒体库名称或其序号（从 1 开始）。若找不到该媒体库，或库内没有可播放内容，则回退到整个服务器。",
     labelPlayDurationMax: "播放时长上限（秒，可选）",
     playDurationMaxHint: "填了之后每次运行会在「播放时长」与上限之间随机取一个值，让观看时长每天不重样。留空则固定用上面的值。",
-    labelBackupUrl: "备用服务器地址（可选）",
-    backupUrlHint: "仅当主服务器完全连不上（拒绝连接、DNS 失败、超时）时才会切到备用地址。服务器有响应但报错（例如密码错误）不会切换。",
+    labelBackupUrl: "备用服务器地址（可选，可多个）",
+    addBackupUrl: "添加备用地址",
+    backupUrlHint: "按填写的顺序依次尝试。主服务器完全连不上（拒绝连接、DNS 失败、超时）或返回 5xx 时切到下一个；返回 4xx（例如密码错误）不会切换——备用服务器会给出同样的答复，切过去只会把真实原因盖住。",
     labelProxy: "代理",
     proxyNone: "不使用代理",
     proxyBrowserOnlyHint:
@@ -2162,9 +2163,10 @@ const en: typeof zh = {
     labelPlayDurationMax: "Play duration upper bound (s, optional)",
     playDurationMaxHint:
       "When set, each run draws a random length between the play duration above and this bound, so the watch time varies from day to day. Leave blank to always use the value above.",
-    labelBackupUrl: "Backup server address (optional)",
+    labelBackupUrl: "Backup server addresses (optional, more than one)",
+    addBackupUrl: "Add a backup address",
     backupUrlHint:
-      "Used only when the primary server cannot be reached at all (connection refused, DNS failure, timeout). A server that answers with an error, such as a wrong password, never triggers the fallback.",
+      "Tried in the order listed. A switch happens when the primary cannot be reached at all (refused, DNS, timeout) or answers with a 5xx; a 4xx, such as a wrong password, does not -- every backup would answer the same way, so switching would bury the real reason.",
     labelProxy: "Proxy",
     proxyNone: "No proxy",
     proxyBrowserOnlyHint:

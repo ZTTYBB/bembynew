@@ -314,7 +314,24 @@
           </div>
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelBackupUrl') }}</label>
-            <input v-model.trim="embyCfg.backupUrl" class="form-input" type="text" placeholder="https://emby.backup.com" />
+            <div v-for="(_, i) in embyCfg.backupUrls" :key="i" class="backup-url-row">
+              <input
+                v-model.trim="embyCfg.backupUrls[i]"
+                class="form-input"
+                type="text"
+                placeholder="https://emby.backup.com"
+              />
+              <button
+                class="btn btn-ghost btn-sm"
+                :title="t('common.delete')"
+                @click="embyCfg.backupUrls.splice(i, 1)"
+              >
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="embyCfg.backupUrls.push('')">
+              <i class="fa-solid fa-plus"></i> {{ t('jobs.addBackupUrl') }}
+            </button>
             <div style="font-size:11px;color:#aaa;margin-top:4px">{{ t('jobs.backupUrlHint') }}</div>
           </div>
           <div class="emby-rules-hint">{{ t('jobs.playbackRulesHint') }}</div>
@@ -1667,10 +1684,10 @@ const extractSource = ref<Job | null>(null);
 const extractName = ref('');
 const extractError = ref('');
 const extractSaving = ref(false);
-const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrl: string; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; library: string }>({
+const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrls: string[]; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; library: string }>({
   username: '',
   password: '',
-  playDuration: '', playDurationMax: '', backupUrl: '',
+  playDuration: '', playDurationMax: '', backupUrls: [],
   userAgent: '',
   markWatched: true,
   verifyPlayable: true,
@@ -1791,7 +1808,7 @@ function onJobTypeChange() {
   customVariables.value = {};
   customOptions.value = [];
   for (const key of Object.keys(customOptionValues)) delete customOptionValues[key];
-  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
   form.accountId = (form.jobType === 'checkin' || form.jobType === 'custom' || form.jobType === 'autoreg')
@@ -1890,7 +1907,7 @@ function applyTemplate(tpl: JobTemplate) {
   setCmdState(tpl.startCommand === '/start' ? '' : (tpl.startCommand ?? ''));
   setBtnState(tpl.checkinButton === '签到' ? '' : (tpl.checkinButton ?? ''));
   if (tpl.jobType === 'embywatch') {
-    Object.assign(embyCfg, { playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     setUaState('');
     const m = tpl.botUsername.match(/^(https?):\/\/([^:/]+)(?::(\d+))?/);
     Object.assign(embyServer, { protocol: (m?.[1] ?? 'https') as 'https' | 'http', host: m?.[2] ?? '', port: m?.[3] ? Number(m[3]) : 443 });
@@ -1969,7 +1986,7 @@ function applyTemplate(tpl: JobTemplate) {
     }
   } else if (tpl.jobType === 'autoreg') {
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     customActions.value = [];
     Object.assign(autoregCfg, defaultAutoregCfg());
     if (tpl.config) {
@@ -2002,7 +2019,7 @@ function applyTemplate(tpl: JobTemplate) {
     }
   } else {
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     customActions.value = [];
   }
 }
@@ -2142,7 +2159,7 @@ function openAdd() {
     exclusiveAccount: false,
   });
   runEveryDaysText.value = '1';
-  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
   customActions.value = [];
@@ -2217,7 +2234,7 @@ function openEdit(j: Job) {
           password: c.password ?? '',
           playDuration: j.templateId ? linkedDurationOverride(c, templateCfg, 'playDuration') : (c.playDuration ?? ''),
           playDurationMax: j.templateId ? linkedDurationOverride(c, templateCfg, 'playDurationMax') : (c.playDurationMax ?? ''),
-          backupUrl: j.templateId ? '' : (c.backupUrl ?? ''),
+          backupUrls: j.templateId ? [] : (c.backupUrls ?? (c.backupUrl ? [c.backupUrl] : [])),
           userAgent: j.templateId ? '' : (c.userAgent ?? ''),
           markWatched: c.markWatched !== false,
           verifyPlayable: c.verifyPlayable !== false,
@@ -2227,15 +2244,15 @@ function openEdit(j: Job) {
         });
         setUaState(j.templateId ? '' : (c.userAgent ?? ''));
       } catch {
-        Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+        Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
         embyUaDropdown.value = '';
       }
     } else {
-      Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+      Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
       embyUaDropdown.value = '';
     }
   } else if (j.jobType === 'custom') {
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     if (j.config) {
       try {
@@ -2315,7 +2332,7 @@ function openEdit(j: Job) {
       customJobMaxRetries.value = 1;
     }
   } else if (j.jobType === 'autoreg') {
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
     Object.assign(autoregCfg, defaultAutoregCfg());
@@ -2348,7 +2365,7 @@ function openEdit(j: Job) {
       } catch { /* ignore */ }
     }
   } else {
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
   }
@@ -2426,7 +2443,8 @@ function buildConfig(): EmbywatchConfig | CustomConfig | AutoregConfig | Checkin
     const cfg: EmbywatchConfig = { username: embyCfg.username, password: embyCfg.password };
     if (embyCfg.playDuration !== '') cfg.playDuration = Number(embyCfg.playDuration as string | number);
     if (embyCfg.playDurationMax !== '') cfg.playDurationMax = Number(embyCfg.playDurationMax as string | number);
-    if (embyCfg.backupUrl) cfg.backupUrl = embyCfg.backupUrl;
+    const backups = embyCfg.backupUrls.map(u => u.trim()).filter(Boolean);
+    if (backups.length) cfg.backupUrls = backups;
     if (embyCfg.userAgent) cfg.userAgent = embyCfg.userAgent;
     cfg.markWatched = embyCfg.markWatched;
     cfg.verifyPlayable = embyCfg.verifyPlayable;
@@ -2702,6 +2720,8 @@ async function saveJob() {
         password: embyCfg.password,
         ...(userAgent ? { userAgent } : {}),
         ...(proxyId ? { proxyId } : {}),
+        // The test walks the same address list a run would, so send them along
+        ...(form.templateId ? {} : { backupUrls: embyCfg.backupUrls.map(u => u.trim()).filter(Boolean) }),
       });
       if (!test.ok) {
         formError.value = `${t('jobs.errors.embyVerifyFailed')}${test.error ? `: ${test.error}` : ''}`;
@@ -3221,5 +3241,18 @@ tbody tr:nth-child(even):not(.row-selected) td {
 @keyframes job-fade-in {
   from { opacity: 0; transform: translateX(-50%) translateY(6px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Backup address rows: input plus a remove button, one address per line */
+.backup-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.backup-url-row .form-input {
+  flex: 1;
+  min-width: 0;
 }
 </style>

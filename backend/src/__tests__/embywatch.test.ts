@@ -26,7 +26,14 @@ vi.mock('../db/database', () => ({
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { db } from '../db/database';
-import { EmbywatchError, resolveProxyLabel, runEmbywatch } from '../jobs/embywatch';
+import {
+  EmbywatchError,
+  isFallbackWorthy,
+  resolveProxyLabel,
+  resolveServerCandidates,
+  runEmbywatch,
+  testEmbyConnection,
+} from '../jobs/embywatch';
 
 const baseConfig = { username: 'user', password: 'pass', playDuration: 1 };
 
@@ -944,5 +951,201 @@ describe('embywatch backup server fallback', () => {
       runEmbywatch(PRIMARY, { ...baseConfig, backupUrl: '' }),
     ).rejects.toThrow('Cannot reach Emby server (ECONNREFUSED)');
     expect(calledUrls()).toHaveLength(1);
+  });
+});
+
+// ---- multiple backup addresses (v1.2.0 "Emby 多备用地址") ---------------------
+
+describe('isFallbackWorthy', () => {
+  it('accepts a network-level failure', () => {
+    expect(
+      isFallbackWorthy(new Error('Cannot reach Emby server at https://x/y — ECONNREFUSED')),
+    ).toBe(true);
+  });
+
+  it('accepts a 5xx answer', () => {
+    expect(
+      isFallbackWorthy(
+        new Error('Emby POST /Users/AuthenticateByName failed: HTTP 503: down'),
+      ),
+    ).toBe(true);
+    expect(isFallbackWorthy(new Error('Emby GET /x failed: HTTP 500: boom'))).toBe(true);
+  });
+
+  it('rejects a 4xx answer', () => {
+    expect(isFallbackWorthy(new Error('Emby POST /x failed: HTTP 401: bad password'))).toBe(false);
+    expect(isFallbackWorthy(new Error('Emby GET /x failed: HTTP 404: nope'))).toBe(false);
+  });
+
+  it('rejects anything that is neither', () => {
+    expect(isFallbackWorthy(new Error('something else entirely'))).toBe(false);
+    expect(isFallbackWorthy('not an error object')).toBe(false);
+    expect(isFallbackWorthy(undefined)).toBe(false);
+  });
+});
+
+describe('resolveServerCandidates', () => {
+  it('puts the primary first and keeps the given order', () => {
+    expect(resolveServerCandidates('https://a', { backupUrls: ['https://b', 'https://c'] })).toEqual([
+      'https://a',
+      'https://b',
+      'https://c',
+    ]);
+  });
+
+  it('reads the older single-address field', () => {
+    expect(resolveServerCandidates('https://a', { backupUrl: 'https://b' })).toEqual([
+      'https://a',
+      'https://b',
+    ]);
+  });
+
+  it('ignores the legacy field when the list is set', () => {
+    expect(
+      resolveServerCandidates('https://a', { backupUrls: ['https://b'], backupUrl: 'https://c' }),
+    ).toEqual(['https://a', 'https://b']);
+  });
+
+  it('trims and drops blanks', () => {
+    expect(
+      resolveServerCandidates(' https://a/ ', { backupUrls: ['', '   ', ' https://b/ '] }),
+    ).toEqual(['https://a', 'https://b']);
+  });
+
+  it('removes duplicates, including ones that differ only by a trailing slash', () => {
+    expect(
+      resolveServerCandidates('https://a/', { backupUrls: ['https://a', 'https://b', 'https://b/'] }),
+    ).toEqual(['https://a', 'https://b']);
+  });
+
+  it('returns just the primary when nothing is configured', () => {
+    expect(resolveServerCandidates('https://a', {})).toEqual(['https://a']);
+  });
+});
+
+describe('embywatch multiple backup addresses', () => {
+  const PRIMARY = 'https://emby.example.com';
+  const B1 = 'https://backup1.example.com';
+  const B2 = 'https://backup2.example.com';
+
+  const authOk = () => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: vi.fn().mockResolvedValue(
+      JSON.stringify({ AccessToken: 'tok', User: { Id: 'uid', Name: 'someone' } }),
+    ),
+  });
+  const unreachable = () =>
+    Promise.reject(Object.assign(new Error('net'), { cause: { code: 'ECONNREFUSED' } }));
+  const serverError = () =>
+    Promise.resolve({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      text: vi.fn().mockResolvedValue(JSON.stringify({ Message: 'Server error' })),
+    });
+
+  const calledUrls = () => mockUndiciFetch.mock.calls.map((c) => String(c[0]));
+
+  it('tries each backup in order until one answers', async () => {
+    mockUndiciFetch.mockImplementation((url: unknown) =>
+      String(url).startsWith(`${B2}/Users/AuthenticateByName`)
+        ? Promise.resolve(authOk())
+        : unreachable(),
+    );
+
+    await expect(
+      runEmbywatch(PRIMARY, { ...baseConfig, backupUrls: [B1, B2] }),
+    ).rejects.toThrow();
+
+    const urls = calledUrls();
+    expect(urls[0]).toContain(`${PRIMARY}/Users/AuthenticateByName`);
+    expect(urls).toContain(`${B1}/Users/AuthenticateByName`);
+    expect(urls).toContain(`${B2}/Users/AuthenticateByName`);
+    // The run settles on the one that answered: everything after it goes there
+    const afterSwitch = urls.slice(urls.indexOf(`${B2}/Users/AuthenticateByName`) + 1);
+    expect(afterSwitch.every((u) => u.startsWith(B2))).toBe(true);
+  });
+
+  it('switches when the primary answers with a 5xx', async () => {
+    mockUndiciFetch.mockImplementation((url: unknown) =>
+      String(url).startsWith(`${B1}/Users/AuthenticateByName`)
+        ? Promise.resolve(authOk())
+        : serverError(),
+    );
+
+    await expect(
+      runEmbywatch(PRIMARY, { ...baseConfig, backupUrls: [B1] }),
+    ).rejects.toThrow();
+
+    const urls = calledUrls();
+    expect(urls[0]).toContain(`${PRIMARY}/Users/AuthenticateByName`);
+    expect(urls.some((u) => u.startsWith(B1))).toBe(true);
+  });
+
+  it('does not walk the list past a 4xx, even with several backups', async () => {
+    mockUndiciFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      text: vi.fn().mockResolvedValue(JSON.stringify({ Message: 'Invalid credentials' })),
+    });
+
+    await expect(
+      runEmbywatch(PRIMARY, { ...baseConfig, backupUrls: [B1, B2] }),
+    ).rejects.toThrow('Invalid credentials');
+
+    // Every backup would answer the same way, so none is asked
+    expect(calledUrls().every((u) => u.startsWith(PRIMARY))).toBe(true);
+  });
+
+  it('reports the last address when every one of them fails', async () => {
+    mockUndiciFetch.mockImplementation((url: unknown) =>
+      String(url).startsWith(`${B2}/Users/AuthenticateByName`) ? serverError() : unreachable(),
+    );
+
+    await expect(
+      runEmbywatch(PRIMARY, { ...baseConfig, backupUrls: [B1, B2] }),
+    ).rejects.toThrow('503');
+
+    expect(calledUrls()).toContain(`${B2}/Users/AuthenticateByName`);
+  });
+
+  it('testEmbyConnection walks the same list a run would', async () => {
+    mockUndiciFetch.mockImplementation((url: unknown) =>
+      String(url).startsWith(`${B2}/Users/AuthenticateByName`)
+        ? Promise.resolve(authOk())
+        : unreachable(),
+    );
+
+    const result = await testEmbyConnection(PRIMARY, {
+      username: 'u',
+      password: 'p',
+      backupUrls: [B1, B2],
+    });
+
+    expect(result.ok).toBe(true);
+    // Which address answered, so the panel can say which one it settled on
+    expect(result.serverUrl).toBe(B2);
+  });
+
+  it('testEmbyConnection stops at a 4xx just like a run', async () => {
+    mockUndiciFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      text: vi.fn().mockResolvedValue(JSON.stringify({ Message: 'Invalid credentials' })),
+    });
+
+    const result = await testEmbyConnection(PRIMARY, {
+      username: 'u',
+      password: 'p',
+      backupUrls: [B1, B2],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Invalid credentials');
+    expect(calledUrls().every((u) => u.startsWith(PRIMARY))).toBe(true);
   });
 });

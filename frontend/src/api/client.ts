@@ -348,7 +348,13 @@ export type EmbywatchConfig = {
   playDuration?: number;
   /** Upper bound of the play-duration range; draws a random length per run. */
   playDurationMax?: number;
-  /** Used only when the primary server cannot be reached at all. */
+  /**
+   * Backup addresses, tried in order when the primary cannot be reached or
+   * answers with a 5xx. A 4xx never switches, so a wrong password is reported
+   * as itself rather than buried behind the backup's error.
+   */
+  backupUrls?: string[];
+  /** Older single-address form; still read so jobs saved before backupUrls work. */
   backupUrl?: string;
   userAgent?: string;
   markWatched?: boolean;
@@ -1166,9 +1172,11 @@ export const jobsApi = {
     password: string;
     userAgent?: string;
     proxyId?: string;
+    /** Walked in order, exactly as a run would. */
+    backupUrls?: string[];
   }) =>
     api
-      .post<{ ok: boolean; userName?: string; error?: string }>(
+      .post<{ ok: boolean; userName?: string; error?: string; serverUrl?: string }>(
         "/jobs/test-emby",
         data,
       )

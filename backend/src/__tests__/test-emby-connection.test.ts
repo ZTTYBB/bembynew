@@ -58,7 +58,7 @@ describe('testEmbyConnection', () => {
 
     const result = await testEmbyConnection('https://emby.example.com', creds);
 
-    expect(result).toEqual({ ok: true, userName: 'Tester' });
+    expect(result).toEqual({ ok: true, userName: 'Tester', serverUrl: 'https://emby.example.com' });
   });
 
   it('sends the credentials to /Users/AuthenticateByName', async () => {

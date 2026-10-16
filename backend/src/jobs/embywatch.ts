@@ -136,13 +136,47 @@ export function resolvePlaybackBudget(
 }
 
 /**
- * True when a request never got an answer at all (refused, DNS, timeout), as
- * opposed to the server answering with an error. Only the first kind justifies
- * switching to a backup: an Emby that replies "401 wrong password" would say
- * the same thing on the backup.
+ * Whether a failure justifies trying the next address.
+ *
+ * Two kinds do: the request never got an answer at all (refused, DNS, timeout),
+ * or the server answered with a server error (5xx) -- either way the host is not
+ * serving us. A 4xx does not: the server is up and has replied, and a backup
+ * would reply the same way, so switching would bury the real error (a wrong
+ * password, say) behind an unrelated one.
  */
-function isUnreachable(err: unknown): boolean {
-  return err instanceof Error && err.message.startsWith('Cannot reach Emby server');
+export function isFallbackWorthy(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.message.startsWith('Cannot reach Emby server')) return true;
+  // embyRequest formats HTTP failures as
+  // "Emby POST /path failed: HTTP 503: detail"
+  const status = /HTTP\s(\d{3})\b/.exec(err.message);
+  return status ? Number(status[1]) >= 500 : false;
+}
+
+/**
+ * Every address a run may try: the primary first, then the configured backups
+ * in the order given.
+ *
+ * Trims, drops blanks and removes duplicates, so a server listed twice is not
+ * tried twice. The older single-address field is read only when no list is
+ * configured -- a job that somehow carries both must not try an address the
+ * panel no longer shows.
+ */
+export function resolveServerCandidates(
+  primary: string,
+  config: Pick<EmbywatchConfig, 'backupUrls' | 'backupUrl'>,
+): string[] {
+  const list = Array.isArray(config.backupUrls) ? config.backupUrls : [];
+  const listed = list.length > 0 ? list : config.backupUrl ? [config.backupUrl] : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [primary, ...listed]) {
+    const url = typeof raw === 'string' ? raw.trim().replace(/\/+$/, '') : '';
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
 }
 
 // Job cancellation. The runner reports a job as "Cancelled" only when the error
@@ -368,30 +402,47 @@ const TEST_TIMEOUT_MS = 12_000;
  * Authenticates against the Emby server without playing anything, so the UI
  * can confirm the server is reachable and the credentials are valid before a
  * job is saved.
+ *
+ * Walks the same address list a run would, in the same order and on the same
+ * rule, so a job that tests green is a job that will run. The address that
+ * answered is reported back.
  */
 export async function testEmbyConnection(
   serverUrl: string,
-  opts: { username: string; password: string; userAgent?: string; proxyId?: string },
-): Promise<{ ok: boolean; userName?: string; error?: string }> {
+  opts: {
+    username: string;
+    password: string;
+    userAgent?: string;
+    proxyId?: string;
+    backupUrls?: string[];
+    backupUrl?: string;
+  },
+): Promise<{ ok: boolean; userName?: string; error?: string; serverUrl?: string }> {
   const ua = opts.userAgent || getSetting('default_ua') || DEFAULT_UA;
   const deviceName = resolveDeviceName(getSetting('default_device_name') ?? 'Mac', opts.username);
   const proxyUrl = resolveProxyUrl(opts.proxyId);
-  try {
-    const auth = await embyRequest<any>(serverUrl, '/Users/AuthenticateByName', {
-      method: 'POST',
-      ua,
-      deviceName,
-      proxyUrl,
-      signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
-      body: { Username: opts.username, Pw: opts.password },
-    });
-    return { ok: true, userName: auth?.User?.Name };
-  } catch (err: any) {
-    return {
-      ok: false,
-      error: safeEmbyError(err, credentialSecrets(opts.password, proxyUrl, serverUrl)),
-    };
+  const candidates = resolveServerCandidates(serverUrl, opts);
+
+  let lastError = '';
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    try {
+      const auth = await embyRequest<any>(candidate, '/Users/AuthenticateByName', {
+        method: 'POST',
+        ua,
+        deviceName,
+        proxyUrl,
+        signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
+        body: { Username: opts.username, Pw: opts.password },
+      });
+      return { ok: true, userName: auth?.User?.Name, serverUrl: candidate };
+    } catch (err: any) {
+      lastError = safeEmbyError(err, credentialSecrets(opts.password, proxyUrl, candidate));
+      // A 4xx is answered the same way everywhere, so stop at the first one
+      if (!isFallbackWorthy(err) || i === candidates.length - 1) break;
+    }
   }
+  return { ok: false, error: lastError };
 }
 
 // Everything needed to reach the Emby media endpoints as the logged-in user.
@@ -1382,16 +1433,28 @@ async function runEmbywatchSession(
       body: { Username: config.username, Pw: config.password },
     });
 
+  // Try each address in turn. The first that answers is the one the whole run
+  // uses -- the auth token, library picks and playback reports must all land on
+  // the same server -- so `serverUrl` is reassigned rather than threaded through.
+  const candidates = resolveServerCandidates(serverUrl, config);
   let auth: any;
-  try {
-    auth = await authenticate(serverUrl);
-  } catch (err) {
-    throwIfAborted(signal);
-    if (!config.backupUrl || !isUnreachable(err)) throw err;
-    console.warn('[embywatch] Primary server is unreachable; switching to configured backup');
-    auth = await authenticate(config.backupUrl);
-    // Everything downstream -- library picks, playback reports -- follows the backup
-    serverUrl = config.backupUrl;
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    try {
+      auth = await authenticate(candidate);
+      if (candidate !== serverUrl) {
+        console.warn(`[embywatch] Switched to backup server ${candidate}`);
+        serverUrl = candidate;
+      }
+      break;
+    } catch (err) {
+      throwIfAborted(signal);
+      // A 4xx is answered the same way by every address, so report it instead of
+      // walking the rest of the list
+      if (!isFallbackWorthy(err) || i === candidates.length - 1) throw err;
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[embywatch] ${candidate} did not serve us (${detail}); trying ${candidates[i + 1]}`);
+    }
   }
 
   const token: string = auth.AccessToken;
@@ -1483,7 +1546,7 @@ export async function runEmbywatch(
 ): Promise<EmbywatchLog> {
   const proxyUrl = resolveProxyUrl(config.proxyId);
   const proxyLabel = resolveProxyLabel(config.proxyId);
-  const secrets = credentialSecrets(config.password, proxyUrl, serverUrl, config.backupUrl);
+  const secrets = credentialSecrets(config.password, proxyUrl, ...resolveServerCandidates(serverUrl, config));
   try {
     return await runEmbywatchSession(serverUrl, config, signal, { proxyUrl, proxyLabel, secrets });
   } catch (error) {

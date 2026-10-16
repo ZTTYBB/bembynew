@@ -747,10 +747,18 @@ export type EmbywatchConfig = {
    */
   playDurationMax?: number;
   /**
-   * Backup server address, used when the primary cannot be reached at all
-   * (connection refused, DNS, timeout). A server that answers -- even with an
-   * error -- never triggers the fallback, so wrong credentials are reported as
-   * themselves.
+   * Backup server addresses, tried in the order given when the primary will not
+   * serve us: either it cannot be reached at all (connection refused, DNS,
+   * timeout) or it answers with a server error (5xx).
+   *
+   * A 4xx does not trigger a switch. The server is up and has answered, and a
+   * backup would answer the same way -- so falling through would bury the real
+   * error, such as a wrong password, behind an unrelated one.
+   */
+  backupUrls?: string[];
+  /**
+   * The older single-address form, still read so jobs saved before `backupUrls`
+   * existed keep working. Ignored when `backupUrls` is set.
    */
   backupUrl?: string;
   userAgent?: string;

@@ -420,9 +420,9 @@ router.get("/", (req, res) => {
 
 // Verify Emby server reachability and credentials without creating a job
 router.post("/test-emby", async (req, res) => {
-  const { serverUrl, username, password, userAgent, proxyId } = (req.body ?? {}) as Record<
+  const { serverUrl, username, password, userAgent, proxyId, backupUrls } = (req.body ?? {}) as Record<
     string,
-    string | undefined
+    string | string[] | undefined
   >;
   if (
     typeof serverUrl !== "string" ||
@@ -430,6 +430,8 @@ router.post("/test-emby", async (req, res) => {
     (password !== undefined && typeof password !== "string") ||
     (userAgent !== undefined && typeof userAgent !== "string") ||
     (proxyId !== undefined && typeof proxyId !== "string") ||
+    (backupUrls !== undefined &&
+      (!Array.isArray(backupUrls) || backupUrls.some((u) => typeof u !== "string"))) ||
     !serverUrl ||
     !username
   ) {
@@ -438,10 +440,14 @@ router.post("/test-emby", async (req, res) => {
       .json({ error: "serverUrl and username are required" });
     return;
   }
-  if (!/^https?:\/\//i.test(serverUrl)) {
+  // The test walks the same list a run would, so check every address the job
+  // would try, not just the first
+  const allUrls = [serverUrl, ...((backupUrls as string[] | undefined) ?? [])];
+  const bad = allUrls.find((u) => u && !/^https?:\/\//i.test(u));
+  if (bad) {
     res
       .status(400)
-      .json({ error: "serverUrl must start with http:// or https://" });
+      .json({ error: `serverUrl must start with http:// or https:// (got "${bad}")` });
     return;
   }
   const result = await testEmbyConnection(serverUrl, {
@@ -449,6 +455,7 @@ router.post("/test-emby", async (req, res) => {
     password: password ?? '',
     userAgent,
     proxyId,
+    backupUrls: backupUrls as string[] | undefined,
   });
   res.json(result);
 });
