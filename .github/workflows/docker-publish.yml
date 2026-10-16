@@ -4,11 +4,17 @@ on:
   push:
     tags: ["v*.*.*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish, e.g. v1.0.0, v1.1.0-beta.1 or dev-v1.0.0-1"
+        required: true
+        type: string
 
 jobs:
   meta:
     runs-on: ubuntu-latest
     outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
       semver: ${{ steps.resolve.outputs.semver }}
       channel: ${{ steps.resolve.outputs.channel }}
       ghcr_image: ${{ steps.ghcr.outputs.image }}
@@ -36,12 +42,15 @@ jobs:
           # *beta*  → beta channel, strip v prefix
           # anything else → latest channel, strip v prefix
           if [[ "${TAG}" == dev-* ]]; then
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
             echo "semver=${TAG}" >> "$GITHUB_OUTPUT"
             echo "channel=dev" >> "$GITHUB_OUTPUT"
           elif [[ "${TAG}" == *beta* ]]; then
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
             echo "semver=${TAG#v}" >> "$GITHUB_OUTPUT"
             echo "channel=beta" >> "$GITHUB_OUTPUT"
           else
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
             echo "semver=${TAG#v}" >> "$GITHUB_OUTPUT"
             echo "channel=latest" >> "$GITHUB_OUTPUT"
           fi
@@ -84,6 +93,11 @@ jobs:
           push: true
           tags: |
             ${{ needs.meta.outputs.ghcr_image }}:${{ needs.meta.outputs.semver }}-${{ matrix.suffix }}
+          # Stamped into the image so the running app knows its own build, which is
+          # what the panel's update check compares against this repo's releases
+          build-args: |
+            BEMBY_VERSION=${{ needs.meta.outputs.semver }}
+            BEMBY_CHANNEL=${{ needs.meta.outputs.channel }}
           cache-from: type=gha,scope=${{ matrix.suffix }}
           cache-to:   type=gha,scope=${{ matrix.suffix }},mode=max
           labels: |
@@ -120,3 +134,44 @@ jobs:
             -t "${GHCR_IMG}:${CHANNEL}" \
             "${GHCR_IMG}:${VER}-amd64" \
             "${GHCR_IMG}:${VER}-arm64"
+
+  # Only once the images exist, so the panel's update check never offers a build
+  # that cannot be pulled yet. The panel reads this repo's releases to decide
+  # whether a newer build exists, so a missing release means "no update".
+  publish:
+    needs: [meta, merge]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub release the update check reads
+    steps:
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          CHANNEL: ${{ needs.meta.outputs.channel }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; leaving it alone."
+            exit 0
+          fi
+
+          # beta and dev builds are marked as pre-releases, which is also what
+          # keeps them off the "latest" slot a stable build owns
+          if [ "${CHANNEL}" = "latest" ]; then
+            FLAGS="--latest"
+          else
+            FLAGS="--prerelease"
+          fi
+
+          # A manual dispatch can name a tag that does not exist yet, so point the
+          # release at the commit that was just built
+          if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            gh release create "${TAG}" --repo "${REPO}" \
+              --title "${TAG}" --generate-notes ${FLAGS}
+          else
+            gh release create "${TAG}" --repo "${REPO}" \
+              --title "${TAG}" --generate-notes ${FLAGS} --target "${GITHUB_SHA}"
+          fi

@@ -1385,6 +1385,8 @@ export type Settings = {
   schedule_min_gap_minutes?: string;
   /** Max jobs running at once; queued jobs wait for a free slot. */
   max_concurrent_jobs?: string;
+  /** "false" stops the panel asking GitHub whether a newer build exists. */
+  update_check_enabled?: string;
   /** "true" once the user has enabled the on-demand Cloudflare solver. */
   cf_solver_enabled?: string;
   /** Server-computed: "true" when the Cloudflare-solver browser is installed. */
@@ -1459,6 +1461,36 @@ export type CfBrowserTest = {
   warnings?: string[];
   notes?: string[];
   exitCountry?: string;
+};
+
+/** Build/upgrade status reported by the backend (see routes/updates.ts). */
+export type UpdateStatus = {
+  version: string;
+  channel: "stable" | "beta" | "dev";
+  /** False for a source checkout or a local build: no update is ever offered. */
+  published: boolean;
+  repo: string;
+  upgrade: {
+    /** Whether the "Upgrade now" button can work (Watchtower configured). */
+    available: boolean;
+    image: string;
+    command: string;
+  };
+  checked: boolean;
+  /** Why no check was made, when it was skipped. */
+  reason?: "disabled" | "unpublished";
+  latest: string | null;
+  releaseUrl: string | null;
+  publishedAt: string | null;
+  updateAvailable: boolean;
+  error?: string;
+};
+
+export const updatesApi = {
+  get: (signal?: AbortSignal) =>
+    api.get<UpdateStatus>("/updates", { signal }).then((r) => r.data),
+  upgrade: () =>
+    api.post<{ ok: boolean; image: string }>("/updates/upgrade").then((r) => r.data),
 };
 
 export const settingsApi = {

@@ -26,6 +26,15 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# Stamped by the release workflow, so the panel knows which build it is running and
+# can compare itself against published releases. Both default to empty, and an empty
+# stamp is precisely what stops a local build from ever being offered an upgrade --
+# the published tags do not describe it.
+ARG BEMBY_VERSION=""
+ARG BEMBY_CHANNEL=""
+ENV BEMBY_VERSION=${BEMBY_VERSION}
+ENV BEMBY_CHANNEL=${BEMBY_CHANNEL}
+
 # V8 sizes its default heap from the memory it can see, which is generous: ~4GB on a 24GB
 # host, and still roughly half of RAM on a small one. Node only collects hard as it nears
 # that ceiling, so on a 2GB box the heap alone can grow past what is left after SQLite, the

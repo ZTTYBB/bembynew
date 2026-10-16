@@ -1,12 +1,14 @@
 services:
   bemby:
-    image: ghcr.io/zttybb/bembynew:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${BEMBY_IMAGE:-ghcr.io/zttybb/bembynew:latest}
     restart: unless-stopped
+    # Room for a clean stop: the app, then any in-flight cleanup
+    stop_grace_period: 30s
     ports:
       - "3000:3000"
+    labels:
+      # The only container the watchtower service below may touch
+      - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - ./data:/app/data
     environment:
@@ -19,3 +21,40 @@ services:
       BEMBY_DATA_KEY: ${BEMBY_DATA_KEY:-}
       # Optional: set a timezone, e.g. TZ=Asia/Shanghai (defaults to UTC)
       TZ: ${TZ:-UTC}
+      # Reverse proxy hops in front of this container: 1 for nginx/Caddy/Traefik,
+      # 2 for Cloudflare in front of one of those. Needed for rate limiting.
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      # One-click upgrade from Settings → Updates, carried out by the watchtower
+      # service below (found by its service name on this file's network). Only
+      # Watchtower gets the Docker socket; Bemby holds this token, which can do
+      # nothing but ask for its own image to be updated.
+      WATCHTOWER_TOKEN: ${WATCHTOWER_TOKEN:?set WATCHTOWER_TOKEN to a long random string, e.g. openssl rand -hex 32}
+      WATCHTOWER_URL: ${WATCHTOWER_URL:-http://watchtower:8080}
+      BEMBY_UPGRADE_IMAGE: ${BEMBY_UPGRADE_IMAGE:-ghcr.io/zttybb/bembynew}
+
+  # Pulls Bemby's newer image and recreates the container when "Upgrade now" is
+  # pressed in Settings. It does nothing on its own: only its update endpoint is
+  # on, scheduled updates are off, and it manages only the labelled bemby
+  # container. Its API is not published to the host -- Bemby reaches it over this
+  # file's network.
+  #
+  # Don't want one-click upgrade? Delete this whole service and the
+  # WATCHTOWER_TOKEN line in the bemby service above. Settings then shows the
+  # command to upgrade by hand instead.
+  watchtower:
+    # Maintained fork; the original containrrr/watchtower was archived in December 2025
+    image: nickfedor/watchtower:latest
+    restart: unless-stopped
+    volumes:
+      # Rootless Docker and some NAS systems keep this elsewhere; change the mount
+      # to match, or delete this service
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_HTTP_API_ENDPOINTS: update
+      # Manage only containers labelled for it (bemby above), whatever else runs here
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_HTTP_API_TOKEN: ${WATCHTOWER_TOKEN:?set WATCHTOWER_TOKEN to a long random string, e.g. openssl rand -hex 32}
+      # Drop the old image once the new one runs, so upgrades do not fill the disk
+      WATCHTOWER_CLEANUP: "true"
+      # As long as Bemby's own stop_grace_period
+      WATCHTOWER_TIMEOUT: 30s

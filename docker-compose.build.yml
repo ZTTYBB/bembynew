@@ -1,0 +1,14 @@
+# Source build -- run your own checkout instead of the published image.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# This file only adds a `build:` section on top of docker-compose.yml; every
+# setting, volume and service comes from there. Upgrades are manual on a source
+# build (the image is not one Watchtower can pull), so the panel reports it as an
+# unpublished build and never offers an upgrade.
+services:
+  bemby:
+    image: bemby-new:local
+    build:
+      context: .
+      dockerfile: Dockerfile

@@ -101,6 +101,7 @@ export const ALLOWED_KEYS = [
   "log_screenshot_max_count",
   "schedule_min_gap_minutes",
   "max_concurrent_jobs",
+  "update_check_enabled",
   "cf_solver_enabled",
   CF_BROWSER_LANG_KEY,
   CF_TUNING_KEY,

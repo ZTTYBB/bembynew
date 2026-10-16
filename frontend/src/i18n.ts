@@ -24,6 +24,7 @@ const zh = {
     help: "帮助",
     messenger: "消息",
     community: "交流群",
+    updateAvailable: "有新版本可用，到「设置 → 更新」查看",
     logout: "退出登录",
   },
   common: {
@@ -1119,6 +1120,30 @@ const zh = {
     logRetentionSection: "日志保留",
     labelLogRetention: "保留天数",
     logRetentionHint: "早于该天数的任务日志将被自动删除，0 表示保留全部日志。",
+    updateSection: "更新",
+    updateVersion: "当前版本",
+    updateState: "状态",
+    updateChannel: {
+      stable: "正式版",
+      beta: "测试版",
+      dev: "开发版",
+    },
+    updateUnpublished: "源码运行或自行构建，不做更新检查。",
+    updateCheckOff: "更新检查已关闭。",
+    updateCheckFailed: "检查失败",
+    updateAvailable: "有新版本 v{version} 可用",
+    updateUpToDate: "已是最新版本",
+    updateUpgradeNow: "立即升级",
+    updateUpgrading: "升级中…，新版本启动后页面会自动刷新。",
+    updateUpgradeHint:
+      "由同一个 docker-compose.yml 中的 Watchtower 拉取新镜像并重建容器。数据目录是挂载卷，会保留；正在运行的任务会被中断并在新版本启动后重新运行。",
+    updateNoWatchtower:
+      "未配置一键升级。在 VPS 上执行下面的命令即可升级（想启用一键升级，请设置 WATCHTOWER_TOKEN）。",
+    updateCopied: "已复制",
+    updateUpgradeFailed: "升级请求失败",
+    updateUpgradeTimeout: "15 分钟内没有看到新版本启动，请执行 docker logs watchtower 查看原因。",
+    updateCheckToggle: "自动检查更新",
+    updateCheckToggleHint: "关闭后不再为此发起任何外部请求。",
     labelLogScreenshotCount: "每次运行保留截图数",
     logScreenshotCountHint: "每次任务最多保留的截图数量，0 表示不限制（仍受截图大小上限约束）。",
     scheduleGapSection: "任务错峰",
@@ -1551,6 +1576,7 @@ const en: typeof zh = {
     help: "Help",
     messenger: "Messenger",
     community: "Community",
+    updateAvailable: "A newer build is available — see Settings → Updates",
     logout: "Logout",
   },
   common: {
@@ -2682,6 +2708,31 @@ const en: typeof zh = {
     labelLogRetention: "Days to keep logs",
     logRetentionHint:
       "Job logs older than this are deleted automatically. 0 keeps all logs.",
+    updateSection: "Updates",
+    updateVersion: "Running version",
+    updateState: "Status",
+    updateChannel: {
+      stable: "stable",
+      beta: "beta",
+      dev: "dev",
+    },
+    updateUnpublished: "A source checkout or a local build — no update check is made.",
+    updateCheckOff: "The update check is switched off.",
+    updateCheckFailed: "Check failed",
+    updateAvailable: "Version {version} is available",
+    updateUpToDate: "Up to date",
+    updateUpgradeNow: "Upgrade now",
+    updateUpgrading: "Upgrading… the page reloads once the new build is up.",
+    updateUpgradeHint:
+      "Watchtower, in the same docker-compose.yml, pulls the new image and recreates this container. The data directory is a volume and survives; jobs running at that moment are interrupted and run again on the new build.",
+    updateNoWatchtower:
+      "One-click upgrade is not set up. Run this on the VPS to upgrade (set WATCHTOWER_TOKEN to enable the button).",
+    updateCopied: "Copied",
+    updateUpgradeFailed: "The upgrade request failed",
+    updateUpgradeTimeout:
+      "No new build came up within 15 minutes — check `docker logs watchtower`.",
+    updateCheckToggle: "Check for updates automatically",
+    updateCheckToggleHint: "When off, no request is made for this at all.",
     labelLogScreenshotCount: "Screenshots per run",
     logScreenshotCountHint:
       "Maximum screenshots retained for each run. 0 means unlimited (the byte budget still applies).",

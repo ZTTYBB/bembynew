@@ -100,51 +100,84 @@ Bemby可签到市面上所有的服（需要正确配置）。无论是TG内，�
 
 ---
 
-## 快速开始
+## 快速开始（推荐）
+
+不需要 clone 仓库，也不需要构建 —— 镜像已经发布在 GHCR，直接拉下来跑即可。
 
 ```bash
-docker run -d \
-  --name bemby \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -v /docker/bemby-data:/app/data \
-  -e ADMIN_USERNAME=admin \
-  -e ADMIN_PASSWORD='change-this-to-a-strong-password' \
-  -e BEMBY_DATA_KEY="$(openssl rand -hex 32)" \
-  -e JWT_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/zttybb/bembynew:latest
+mkdir bemby && cd bemby
+
+# 下载 compose 与配置模板
+curl -fsSLO https://raw.githubusercontent.com/ZTTYBB/bembynew/main/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/ZTTYBB/bembynew/main/env.example
+
+# 生成两个密钥填进 .env
+echo "JWT_SECRET=$(openssl rand -hex 32)"        >> .env
+echo "WATCHTOWER_TOKEN=$(openssl rand -hex 32)" >> .env
+${EDITOR:-vi} .env   # 至少改掉 ADMIN_PASSWORD
+
+docker compose up -d
 ```
 
-上面的命令适用于已经发布 GHCR 镜像的版本。你也可以在自己的 VPS 上从源码构建，推荐使用下面的 Compose 方式。
+打开 `http://你的VPS地址:3000`，用 `.env` 里的管理员账号登录。
 
-> `JWT_SECRET` 为必填项，且不能使用公开的占位值（如 `change-me-in-production`），否则应用将拒绝启动。请用 `openssl rand -hex 32` 生成。
+**必须设置的项：**
 
-默认值：端口 `3000`，数据库 `/app/data/bemby.db`，时区 UTC。如需指定时区，追加 `TZ=Asia/Shanghai`。
+| 变量 | 说明 |
+|---|---|
+| `ADMIN_PASSWORD` | 管理员密码。用默认值登录会被强制要求修改 |
+| `JWT_SECRET` | 登录令牌签名密钥。不填 compose 会拒绝启动 |
+| `WATCHTOWER_TOKEN` | 一键升级用的共享令牌。不填 compose 会拒绝启动 |
+
+**建议设置的项：**
+
+| 变量 | 说明 |
+|---|---|
+| `BEMBY_DATA_KEY` | 加密 Telegram 会话与 API 凭据。**不设就是明文存储**，务必设置并备份好这个 key |
+| `TZ` | 时区，例如 `Asia/Shanghai`（默认 UTC） |
+| `TRUST_PROXY` | 挂了反向代理时设为 `1`（Cloudflare + nginx 则 `2`），否则限流会失效 |
+
+`./data` 是持久化目录，存放 SQLite 库和下载的浏览器。**升级或重建容器前不要删除它**，备份也备份整个目录。
+
+> 不想用一键升级？删掉 `docker-compose.yml` 里的 `watchtower` 服务和 `WATCHTOWER_TOKEN` 两行即可，「设置 → 更新」会改为显示手动升级命令。
 
 ---
 
-## VPS 部署（从源码构建）
+## 升级
 
-Docker 构建在你的 VPS 上执行，本地电脑不需要安装 Docker：
+「设置 → 更新」在有新版本时会出现「立即升级」按钮，点击后由同 compose 中的 Watchtower 拉取新镜像并重建容器，页面在新版本启动后自动刷新。数据目录是挂载卷，会保留。
+
+也可以手动升级：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+> 用了固定版本标签（如 `:1.0.0`）时 Watchtower 只会重新拉同一个版本，升级需手动执行上面的命令。
+
+---
+
+## 从源码构建
+
+想跑自己的改动时使用，构建在你的 VPS 上执行：
 
 ```bash
 git clone https://github.com/ZTTYBB/bembynew.git
 cd bembynew
 cp env.example .env
-openssl rand -hex 32  # 为 JWT_SECRET 和 BEMBY_DATA_KEY 各生成一个独立值
 ${EDITOR:-vi} .env
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 docker compose logs -f bemby
 ```
-
-至少要设置 `ADMIN_PASSWORD`、`JWT_SECRET`；建议同时设置 `BEMBY_DATA_KEY`，用于加密 Telegram 会话、API 凭据和其他敏感数据。`./data` 是持久化目录，升级或重建容器前不要删除它。首次访问 `http://你的VPS地址:3000`，使用 `.env` 中的管理员账号登录。
 
 更新代码时：
 
 ```bash
 git pull --ff-only
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
+
+> 源码构建没有版本标记，「设置 → 更新」会显示为「源码运行或自行构建，不做更新检查」，也不会提供一键升级。
 
 如果 VPS 没有 `docker compose` 子命令，请安装 Docker Compose v2；不要把 `data/`、`.env` 或 Telegram 会话文件提交到 Git。
 

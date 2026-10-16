@@ -23,11 +23,16 @@
 
     <nav class="sidebar" :class="{ 'is-open': sidebarOpen }">
       <div class="sidebar-title">
-        <a class="sidebar-brand" href="https://github.com/liveinaus/Bemby" target="_blank" rel="noopener noreferrer">
+        <a class="sidebar-brand" href="https://github.com/ZTTYBB/bembynew" target="_blank" rel="noopener noreferrer">
           <img src="/logo.png" alt="Bemby" class="sidebar-logo" />
           <div class="sidebar-brand-text">
             <span class="sidebar-name">BEMBY</span>
-            <span class="sidebar-version">v{{ APP_VERSION }}</span>
+            <span class="sidebar-version">v{{ runningVersion ?? APP_VERSION }}</span>
+            <span
+              v-if="updateAvailable"
+              class="update-dot"
+              :title="t('nav.updateAvailable')"
+            ></span>
           </div>
         </a>
       </div>
@@ -50,7 +55,7 @@
           <i class="fa-brands fa-telegram" style="font-size:16px" aria-hidden="true"></i>
           {{ t('nav.community') }}
         </a>
-        <a class="github-link" href="https://github.com/liveinaus/Bemby" target="_blank" rel="noopener noreferrer">
+        <a class="github-link" href="https://github.com/ZTTYBB/bembynew" target="_blank" rel="noopener noreferrer">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
             <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
           </svg>
@@ -87,12 +92,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, ref, watch, type Component } from 'vue';
+import { computed, defineAsyncComponent, h, onMounted, ref, watch, type Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { version } from '../package.json';
 const APP_VERSION = version + (import.meta.env.DEV ? '-dev' : '');
 import { t, locale, setLocale } from './i18n';
-import { authApi, requirePasswordChangeSignal } from './api/client';
+import { authApi, requirePasswordChangeSignal, updatesApi } from './api/client';
 import {
   loadSchedulePageSetting,
   scheduleSeparatePage,
@@ -165,6 +170,21 @@ const router = useRouter();
 
 const isPublicRoute = computed(() => route.meta.public === true);
 const sidebarOpen = ref(false);
+
+// The running build, straight from the backend, so the sidebar reports the image
+// that is actually up rather than the version this bundle was compiled from.
+const runningVersion = ref<string | null>(null);
+const updateAvailable = ref(false);
+
+onMounted(async () => {
+  try {
+    const status = await updatesApi.get();
+    runningVersion.value = status.version;
+    updateAvailable.value = status.updateAvailable;
+  } catch {
+    // Signed out, or the API is not reachable yet -- keep the compiled-in version
+  }
+});
 
 function logout() {
   localStorage.removeItem('token');
@@ -245,5 +265,17 @@ async function submitForcePwdChange() {
   color: var(--text-secondary, #aaa);
   margin: 0 0 1.5rem;
   font-size: 0.9rem;
+}
+
+/* A newer build is published. A dot rather than a word: it has to sit inside the
+   brand block without pushing the version around. */
+.update-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: #e63946;
+  vertical-align: middle;
 }
 </style>

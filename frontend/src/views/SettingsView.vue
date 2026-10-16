@@ -2040,6 +2040,111 @@
           </button>
         </div>
       </div>
+
+      <!-- Updates -->
+      <div class="card s-col-6">
+        <div class="card-body">
+          <div class="card-section-title">{{ t("settings.updateSection") }}</div>
+
+          <div v-if="updateStatus" class="update-rows">
+            <div class="update-row">
+              <span class="update-label">{{ t("settings.updateVersion") }}</span>
+              <span class="update-value">
+                v{{ updateStatus.version }}
+                <span class="update-channel">{{
+                  t(`settings.updateChannel.${updateStatus.channel}`)
+                }}</span>
+              </span>
+            </div>
+
+            <div class="update-row">
+              <span class="update-label">{{ t("settings.updateState") }}</span>
+              <span class="update-value">
+                <span v-if="!updateStatus.published" style="color: #888">
+                  {{ t("settings.updateUnpublished") }}
+                </span>
+                <span v-else-if="!updateStatus.checked" style="color: #888">
+                  {{ t("settings.updateCheckOff") }}
+                </span>
+                <span v-else-if="updateStatus.error" style="color: #b45309">
+                  {{ t("settings.updateCheckFailed") }} — {{ updateStatus.error }}
+                </span>
+                <span v-else-if="updateStatus.updateAvailable" style="color: #065f46">
+                  {{
+                    t("settings.updateAvailable", {
+                      version: updateStatus.latest ?? "",
+                    })
+                  }}
+                </span>
+                <span v-else style="color: #065f46">
+                  {{ t("settings.updateUpToDate") }}
+                </span>
+              </span>
+            </div>
+          </div>
+          <div v-else class="update-rows">
+            <span style="color: #888">{{ t("common.loading") }}</span>
+          </div>
+
+          <div v-if="updateMsg" class="success-msg" style="margin-top: 10px">
+            {{ updateMsg }}
+          </div>
+          <div v-if="updateError" class="error-msg" style="margin-top: 10px">
+            {{ updateError }}
+          </div>
+
+          <!-- One-click upgrade is configured -->
+          <template v-if="updateStatus?.upgrade.available">
+            <button
+              class="btn btn-primary"
+              style="margin-top: 12px"
+              :disabled="!updateStatus.updateAvailable || upgrading"
+              @click="startUpgrade"
+            >
+              <i
+                class="fa-solid"
+                :class="upgrading ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-down'"
+              ></i>
+              {{ upgrading ? t("settings.updateUpgrading") : t("settings.updateUpgradeNow") }}
+            </button>
+            <p style="font-size: 12px; color: #888; margin: 8px 0 0">
+              {{ t("settings.updateUpgradeHint") }}
+            </p>
+          </template>
+
+          <!-- No Watchtower: hand over the command instead -->
+          <template v-else-if="updateStatus">
+            <p style="font-size: 12px; color: #888; margin: 12px 0 6px">
+              {{ t("settings.updateNoWatchtower") }}
+            </p>
+            <div class="update-command">
+              <code>{{ updateStatus.upgrade.command }}</code>
+              <button class="btn btn-ghost btn-sm" @click="copyUpgradeCommand">
+                <i class="fa-regular fa-copy"></i>
+              </button>
+            </div>
+          </template>
+
+          <label
+            v-if="updateStatus?.published"
+            class="form-check"
+            style="margin-top: 14px"
+          >
+            <input
+              type="checkbox"
+              :checked="updateCheckEnabled"
+              @change="toggleUpdateCheck"
+            />
+            <span>{{ t("settings.updateCheckToggle") }}</span>
+          </label>
+          <div
+            v-if="updateStatus?.published"
+            style="font-size: 11px; color: #aaa; margin-top: 4px; padding-left: 24px"
+          >
+            {{ t("settings.updateCheckToggleHint") }}
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Removing every downloaded build: ~200MB each comes back only by downloading again -->
@@ -2070,8 +2175,10 @@ import {
   dataApi,
   aiSuppliersApi,
   statusApi,
+  updatesApi,
   type CfBrowserTest,
   type CfBrowserTestRun,
+  type UpdateStatus,
 } from "../api/client";
 import type {
   MemoryReport,
@@ -2965,6 +3072,86 @@ const crashText = computed(() => {
     .replace("{at}", new Date(c.at).toLocaleString());
 });
 
+// ── Updates ───────────────────────────────────────────────────────────────────
+
+const updateStatus = ref<UpdateStatus | null>(null);
+const upgrading = ref(false);
+const updateMsg = ref("");
+const updateError = ref("");
+const updateCheckOn = ref(true);
+
+async function loadUpdateStatus() {
+  try {
+    updateStatus.value = await updatesApi.get();
+  } catch {
+    // Leave the card as it is; the next visit retries
+  }
+}
+
+async function toggleUpdateCheck(event: Event) {
+  const next = (event.target as HTMLInputElement).checked;
+  updateCheckOn.value = next;
+  try {
+    await settingsApi.update({ update_check_enabled: next ? "true" : "false" });
+    await loadUpdateStatus();
+  } catch {
+    updateCheckOn.value = !next;
+  }
+}
+
+async function copyUpgradeCommand() {
+  const cmd = updateStatus.value?.upgrade.command ?? "";
+  try {
+    await navigator.clipboard.writeText(cmd);
+    updateMsg.value = t("settings.updateCopied");
+    setTimeout(() => (updateMsg.value = ""), 2000);
+  } catch {
+    // Clipboard needs a secure context; over plain http the command is on screen anyway
+  }
+}
+
+async function startUpgrade() {
+  upgrading.value = true;
+  updateError.value = "";
+  updateMsg.value = "";
+  const from = updateStatus.value?.version;
+
+  try {
+    await updatesApi.upgrade();
+  } catch (err: any) {
+    upgrading.value = false;
+    updateError.value =
+      err?.response?.data?.error ?? t("settings.updateUpgradeFailed");
+    return;
+  }
+
+  updateMsg.value = t("settings.updateUpgrading");
+
+  // Watchtower pulls in the background and the container is recreated shortly, so
+  // the only reliable signal is the reported version changing -- or the API going
+  // away while the container is swapped. Give up after 15 minutes.
+  const deadline = Date.now() + 15 * 60_000;
+  const tick = async () => {
+    if (Date.now() > deadline) {
+      upgrading.value = false;
+      updateMsg.value = "";
+      updateError.value = t("settings.updateUpgradeTimeout");
+      return;
+    }
+    try {
+      const fresh = await updatesApi.get();
+      if (fresh.version !== from) {
+        window.location.reload();
+        return;
+      }
+    } catch {
+      // Expected while the container is being replaced
+    }
+    setTimeout(tick, 5_000);
+  };
+  setTimeout(tick, 5_000);
+}
+
 async function loadMemory() {
   memoryLoading.value = true;
   try {
@@ -2978,6 +3165,7 @@ async function loadMemory() {
 
 onMounted(async () => {
   loadMemory();
+  loadUpdateStatus();
   await loadProviders();
   try {
     const s = await settingsApi.get();
@@ -2996,6 +3184,7 @@ onMounted(async () => {
         ? Math.max(0, Number(s.schedule_min_gap_minutes) || 0)
         : 2;
     scheduleGapSaved = scheduleGapMinutes.value;
+    updateCheckOn.value = s.update_check_enabled !== "false";
     maxConcurrentJobs.value =
       s.max_concurrent_jobs != null && s.max_concurrent_jobs !== ""
         ? Math.min(20, Math.max(1, Number(s.max_concurrent_jobs) || 2))
@@ -4117,5 +4306,57 @@ async function signOutEverywhere() {
   background: #fdf1f0;
   border-color: #e0a9a4;
   opacity: 1;
+}
+
+/* Updates card: label/value rows, then the command to copy when Watchtower is
+   not configured. */
+.update-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.update-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.update-label {
+  flex: 0 0 96px;
+  color: #888;
+}
+
+.update-value {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.update-channel {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eef2f7;
+  color: #556;
+  font-size: 11px;
+}
+
+.update-command {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.update-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #f5f6f8;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 </style>
