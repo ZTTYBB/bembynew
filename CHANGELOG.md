@@ -4,6 +4,40 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.7
+
+小程序（Mini App）闭环验证与自动返回补齐、“今日已签”智能识别短路成功、Emby 晚高峰避让与真实心跳抖动、追剧集数保护及执行周期文案优化。
+
+Mini App verification auto-completion and return deep-link following, already-checked-in smart short-circuiting, Emby peak-hour avoidance, natural heartbeat jitter, episode limit guard, and schedule cycle label enhancements.
+
+### 中文
+
+**功能与体验**
+
+- **Mini App 闭环自动补齐与回跳联动** -- 解决小程序完成 CF 人机验证后卡在最后一步的问题：
+  1. 自动扩展 Mini App 按钮识别规则，若未显式指定内嵌点击步骤，自动匹配并点击「完成验证 / 完成签到 / 立即验证 / 提交验证 / Verify」等确认操作；
+  2. 深度拦截 Webview 桥接协议（`web_app_open_tg_link`、`web_app_open_link` 与页面重定向），精准提取返回 Telegram 的 `tg://` 或 `t.me` 携带的 `/start [payload]` 参数，在验证通过后自动向目标机器人回发 `/start`，彻底实现免干预全自动闭环。
+- **“今日已签”智能识别与短路提前完成** -- 签到任务与自定义工作流新增智能短路判定。当收到机器人回复、Toast 提示或 Mini App 状态匹配「今日已签 / 已签到 / 您今天已 / 重复签到 / 今日已打卡 / already checked in」等语义时，直接判定当前任务已成功完成，并短路停止后续冗余步骤，彻底解决“由于今日已签导致按钮消失、进而报按钮不存在错误”的误报痛点。
+- **Emby 晚高峰智能避让** -- Emby 观看任务与模板支持勾选「避开晚高峰（20:00 - 23:00）」。排程计算时自动剔除当地时间 20:00 至 23:00 高峰时段，防止在服主服务器拥塞或人工巡检高峰期产生流量，显著降低被封禁或风控风险。
+- **模拟真实播放心跳（±3s 自然抖动）** -- Emby 真实观看心跳上报增加 ±3 秒随机抖动机制，打破固定每 30 秒机械上报的机器人特征，更逼真模拟真实客户端网络心跳。
+- **连续追剧单次最多集数保护** -- 顺序播放（续播）模式新增「单次最多集数」配置（默认 2 集，支持 1~20 自定义），防止短剧、泡面番等超短视频因时长预算未耗尽而被一口气连播几十集，更符合真实追剧节奏。
+- **执行周期文案优化** -- 将界面表单与帮助文档中易产生歧义的「每隔多少天执行」全面优化为「每几天执行一次（1 为每天）」，并附带清晰提示：「填 1 为每天执行，填 2 为隔天执行；填范围（如 1-3）会在每次排程时随机抽取间隔天数」。
+
+### English
+
+**Features & Improvements**
+
+- **Mini App Verification Auto-Completion & Return Link Following** -- Completes end-to-end Mini App checkin workflows:
+  1. Automatically detects and clicks confirmation controls (`Complete Verification`, `Complete Check-in`, `Verify`, `Submit`) when no explicit in-app steps are specified.
+  2. Injects deep webview shims to intercept `web_app_open_tg_link`, `web_app_open_link`, and navigation events, capturing the return `/start [payload]` parameter and automatically dispatching it to the bot to finish the check-in loop.
+- **Smart "Already Checked In" Detection & Short-Circuit** -- Both checkin and custom jobs detect bot replies, toasts, and webview messages indicating prior checkin (`今日已签`, `已签到`, `already checked in`, etc.). The runner immediately flags the step as successful and short-circuits remaining redundant actions, eliminating false failures when checkin buttons disappear.
+- **Emby Peak Hours Avoidance (20:00 - 23:00)** -- Emby jobs and templates support an "Avoid peak hours" toggle. The scheduler excludes evening peak hours (20:00 - 23:00 local time) from candidate slots, minimizing detection and server congestion risks.
+- **Playback Heartbeat Natural Jitter (±3s)** -- Injects random jitter into the 30s playback heartbeat progress interval, eliminating rigid machine-like timing signatures.
+- **Sequence Play Episode Limit Guard** -- Added a "Max episodes per run" setting (default 2, configurable 1-20) for Sequence Play to protect short anime or miniseries from being excessively watched in a single run.
+- **Schedule Cycle Label Clarity** -- Clarified "Run every N days (1 = daily)" with helpful guidance ("Enter 1 for daily, 2 for every other day; or a range like 1-3 for random intervals").
+
+---
+
 ## v1.0.6
 
 修复 AI 服务商多节点状态摘要显示、新增全局 Emby 观看默认时长真人随机区间防风控，并清理自建面板外部社区入口。
