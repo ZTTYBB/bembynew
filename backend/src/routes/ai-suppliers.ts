@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/database';
+import { TEST_IMAGE_BASE64 } from './ai-test-image';
 
 const router = Router();
 
@@ -251,7 +252,6 @@ router.post('/test', async (req, res) => {
     let visionSupported = false;
     let visionError: string | undefined;
 
-    const dummyImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     try {
       const visionRes = await fetch(endpoint, {
         method: 'POST',
@@ -264,11 +264,11 @@ router.post('/test', async (req, res) => {
           messages: [{
             role: 'user',
             content: [
-              { type: 'image_url', image_url: { url: dummyImage } },
-              { type: 'text', text: '图中是什么颜色？简要回答' },
+              { type: 'image_url', image_url: { url: TEST_IMAGE_BASE64 } },
+              { type: 'text', text: '图中内容是什么？简要回答' },
             ],
           }],
-          max_tokens: 50,
+          max_tokens: 30,
         }),
         signal: AbortSignal.timeout(Math.min(targetTimeout, 15000)),
       });
