@@ -1930,12 +1930,68 @@
 
             <!-- Models -->
             <div class="supplier-models">
-              <div class="supplier-models-label">
-                {{ t("settings.supplierModels") }}
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <div class="supplier-models-label" style="margin-bottom: 0;">
+                  {{ t("settings.supplierModels") }}
+                </div>
+                <button
+                  class="btn btn-ghost btn-sm"
+                  style="padding: 2px 8px; font-size: 11px; color: var(--accent, #6366f1); display: inline-flex; align-items: center; gap: 4px;"
+                  :disabled="remoteModelsLoading"
+                  @click="openRemoteModelsModal(s)"
+                >
+                  <i class="fa-solid fa-cloud-arrow-down"></i>
+                  {{ t("settings.fetchRemoteModels") }}
+                </button>
               </div>
               <div class="supplier-model-chips">
-                <span v-for="m in s.models" :key="m.id" class="model-chip">
-                  {{ m.model_id }}
+                <span
+                  v-for="m in s.models"
+                  :key="m.id"
+                  class="model-chip"
+                  :class="{
+                    'chip-test-ok': modelTests[`${s.id}:${m.model_id}`]?.ok && modelTests[`${s.id}:${m.model_id}`]?.vision_supported,
+                    'chip-test-warn': modelTests[`${s.id}:${m.model_id}`]?.ok && !modelTests[`${s.id}:${m.model_id}`]?.vision_supported,
+                    'chip-test-err': modelTests[`${s.id}:${m.model_id}`] && !modelTests[`${s.id}:${m.model_id}`]?.ok,
+                  }"
+                >
+                  <span class="model-id-text">{{ m.model_id }}</span>
+                  <span
+                    v-if="modelTests[`${s.id}:${m.model_id}`]?.testing"
+                    class="model-chip-status"
+                    style="font-size: 10px; color: #888;"
+                  >
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                  </span>
+                  <span
+                    v-else-if="modelTests[`${s.id}:${m.model_id}`]?.ok"
+                    class="model-chip-status"
+                    :style="{ color: modelTests[`${s.id}:${m.model_id}`]?.vision_supported ? '#10b981' : '#f59e0b', fontSize: '11px', fontWeight: 'bold' }"
+                    :title="modelTests[`${s.id}:${m.model_id}`]?.vision_supported ? `${t('settings.testSuccessFull')} (${modelTests[`${s.id}:${m.model_id}`]?.latency_ms}ms)` : `${t('settings.testTextOnly')} (${modelTests[`${s.id}:${m.model_id}`]?.latency_ms}ms)`"
+                  >
+                    {{ modelTests[`${s.id}:${m.model_id}`]?.latency_ms }}ms
+                    <i
+                      class="fa-solid"
+                      :class="modelTests[`${s.id}:${m.model_id}`]?.vision_supported ? 'fa-eye' : 'fa-font'"
+                      style="margin-left: 2px;"
+                    ></i>
+                  </span>
+                  <span
+                    v-else-if="modelTests[`${s.id}:${m.model_id}`]?.error"
+                    class="model-chip-status"
+                    style="color: #ef4444; font-size: 11px;"
+                    :title="modelTests[`${s.id}:${m.model_id}`]?.error"
+                  >
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                  </span>
+                  <button
+                    class="model-chip-action"
+                    :disabled="modelTests[`${s.id}:${m.model_id}`]?.testing"
+                    :title="t('settings.testModel')"
+                    @click.stop="testSingleModel(s.id, m.model_id)"
+                  >
+                    <i class="fa-solid fa-vial"></i>
+                  </button>
                   <button
                     class="model-chip-del"
                     @click="removeModel(s.id, m.id)"
@@ -2284,6 +2340,95 @@
         </div>
       </div>
     </div>
+    <!-- Remote Models Modal -->
+    <div v-if="showRemoteModelsModal" class="modal-backdrop" @click.self="showRemoteModelsModal = false">
+      <div class="modal" style="width: 580px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <h3 class="modal-title" style="margin: 0; font-size: 16px;">
+            {{ t("settings.selectModelsTitle") }} — {{ remoteModalSupplierName }}
+          </h3>
+          <button class="btn btn-ghost btn-sm" @click="showRemoteModelsModal = false">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <input
+            v-model="remoteModelsFilter"
+            class="form-input"
+            style="flex: 1;"
+            :placeholder="t('settings.searchModelsPlaceholder')"
+          />
+          <button
+            class="btn btn-sm"
+            :class="remoteModelsQuickTag === 'all' ? 'btn-primary' : 'btn-ghost'"
+            @click="remoteModelsQuickTag = 'all'"
+          >
+            {{ t("settings.quickFilterAll") }}
+          </button>
+          <button
+            class="btn btn-sm"
+            :class="remoteModelsQuickTag === 'vision' ? 'btn-primary' : 'btn-ghost'"
+            @click="remoteModelsQuickTag = 'vision'"
+          >
+            <i class="fa-solid fa-eye"></i> {{ t("settings.quickFilterVision") }}
+          </button>
+        </div>
+
+        <div class="modal-body" style="flex: 1; overflow-y: auto; max-height: 48vh; padding: 4px; margin-bottom: 12px;">
+          <div v-if="remoteModelsLoading" style="text-align: center; padding: 32px; color: #888;">
+            <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+            <p style="margin-top: 8px; font-size: 13px;">{{ t("settings.fetchingModels") }}</p>
+          </div>
+          <div v-else-if="remoteModelsError" style="padding: 16px; color: #ef4444; background: #fef2f2; border-radius: 8px; font-size: 13px;">
+            <i class="fa-solid fa-triangle-exclamation"></i> {{ remoteModelsError }}
+          </div>
+          <div v-else-if="!filteredRemoteModels.length" style="text-align: center; padding: 32px; color: #aaa; font-size: 13px;">
+            {{ t("settings.noRemoteModels") }}
+          </div>
+          <div v-else style="display: flex; flex-direction: column; gap: 6px;">
+            <label
+              v-for="rm in filteredRemoteModels"
+              :key="rm.id"
+              class="form-check"
+              style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f9fafb; border-radius: 6px; cursor: pointer; border: 1px solid #e5e7eb;"
+              :style="{ borderColor: selectedRemoteModels[rm.id] ? 'var(--accent, #6366f1)' : '#e5e7eb', background: selectedRemoteModels[rm.id] ? '#f5f3ff' : '#f9fafb' }"
+            >
+              <input
+                type="checkbox"
+                :checked="!!selectedRemoteModels[rm.id]"
+                @change="selectedRemoteModels[rm.id] = !selectedRemoteModels[rm.id]"
+              />
+              <span style="font-size: 12px; font-family: monospace; word-break: break-all; flex: 1;">
+                {{ rm.id }}
+              </span>
+              <span v-if="/vision|4o|flash|sonnet|vl|image/i.test(rm.id)" style="font-size: 11px; color: #10b981;" :title="t('settings.quickFilterVision')">
+                <i class="fa-solid fa-eye"></i> Vision
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; margin: 0; padding-top: 8px; border-top: 1px solid #e5e7eb;">
+          <span style="font-size: 12px; color: #666;">
+            {{ t("settings.selectedModelsCount", { count: selectedRemoteModelsCount }) }}
+          </span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-ghost" @click="showRemoteModelsModal = false">
+              {{ t("common.cancel") }}
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!selectedRemoteModelsCount || remoteModelsAdding"
+              @click="addSelectedRemoteModels"
+            >
+              <i class="fa-solid" :class="remoteModelsAdding ? 'fa-spinner fa-spin' : 'fa-plus'"></i>
+              {{ t("settings.addSelectedModels") }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -2446,6 +2591,28 @@ const showAddSupplier = ref(false);
 const supplierSaving = ref(false);
 const supplierError = ref("");
 const newModelInputs = ref<Record<number, string>>({});
+
+type ModelTestResult = {
+  testing?: boolean;
+  ok?: boolean;
+  latency_ms?: number;
+  reply?: string;
+  vision_supported?: boolean;
+  vision_error?: string;
+  error?: string;
+};
+
+const modelTests = ref<Record<string, ModelTestResult>>({});
+const showRemoteModelsModal = ref(false);
+const remoteModalSupplierId = ref<number | null>(null);
+const remoteModalSupplierName = ref("");
+const remoteModelsLoading = ref(false);
+const remoteModelsError = ref("");
+const remoteModelsList = ref<Array<{ id: string; owned_by?: string }>>([]);
+const remoteModelsFilter = ref("");
+const remoteModelsQuickTag = ref<"all" | "vision">("all");
+const selectedRemoteModels = ref<Record<string, boolean>>({});
+const remoteModelsAdding = ref(false);
 
 const notifyForm = reactive({
   botToken: "",
@@ -3896,6 +4063,77 @@ async function removeModel(supplierId: number, modelId: number) {
   }
 }
 
+async function testSingleModel(supplierId: number, modelId: string) {
+  const key = `${supplierId}:${modelId}`;
+  modelTests.value[key] = { testing: true };
+  try {
+    const res = await aiSuppliersApi.testModel({
+      supplier_id: supplierId,
+      model_id: modelId,
+    });
+    modelTests.value[key] = res;
+  } catch (err: any) {
+    modelTests.value[key] = {
+      ok: false,
+      error: err.response?.data?.error ?? err.message ?? "Test failed",
+    };
+  }
+}
+
+async function openRemoteModelsModal(supplier: AiSupplier) {
+  remoteModalSupplierId.value = supplier.id;
+  remoteModalSupplierName.value = supplier.name;
+  showRemoteModelsModal.value = true;
+  remoteModelsLoading.value = true;
+  remoteModelsError.value = "";
+  remoteModelsList.value = [];
+  remoteModelsFilter.value = "";
+  remoteModelsQuickTag.value = "all";
+  selectedRemoteModels.value = {};
+
+  try {
+    const res = await aiSuppliersApi.fetchRemoteModels({ supplier_id: supplier.id });
+    remoteModelsList.value = res.models || [];
+  } catch (err: any) {
+    remoteModelsError.value = err.response?.data?.error ?? err.message ?? "Failed to fetch models";
+  } finally {
+    remoteModelsLoading.value = false;
+  }
+}
+
+const filteredRemoteModels = computed(() => {
+  let list = remoteModelsList.value;
+  if (remoteModelsQuickTag.value === "vision") {
+    list = list.filter((m) => /vision|4o|flash|sonnet|vl|image/i.test(m.id));
+  }
+  if (remoteModelsFilter.value.trim()) {
+    const q = remoteModelsFilter.value.trim().toLowerCase();
+    list = list.filter((m) => m.id.toLowerCase().includes(q) || (m.owned_by && m.owned_by.toLowerCase().includes(q)));
+  }
+  return list;
+});
+
+const selectedRemoteModelsCount = computed(() => {
+  return Object.values(selectedRemoteModels.value).filter(Boolean).length;
+});
+
+async function addSelectedRemoteModels() {
+  if (!remoteModalSupplierId.value) return;
+  const toAdd = Object.keys(selectedRemoteModels.value).filter((id) => selectedRemoteModels.value[id]);
+  if (!toAdd.length) return;
+
+  remoteModelsAdding.value = true;
+  try {
+    await aiSuppliersApi.addModelsBatch(remoteModalSupplierId.value, toAdd);
+    showRemoteModelsModal.value = false;
+    await reloadSuppliers();
+  } catch (err: any) {
+    remoteModelsError.value = err.response?.data?.error ?? err.message ?? "Failed to add models";
+  } finally {
+    remoteModelsAdding.value = false;
+  }
+}
+
 async function saveNotify() {
   notifyMsg.value = "";
   notifyError.value = "";
@@ -4413,6 +4651,35 @@ async function signOutEverywhere() {
 }
 .model-chip-del:hover {
   color: #ef4444;
+}
+.model-chip-action {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1;
+}
+.model-chip-action:hover {
+  color: var(--accent, #6366f1);
+}
+.model-chip.chip-test-ok {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+}
+.model-chip.chip-test-warn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+.model-chip.chip-test-err {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+.model-chip-status {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
 }
 .model-add-row {
   display: flex;

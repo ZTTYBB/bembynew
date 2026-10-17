@@ -1686,6 +1686,12 @@ export const aiSuppliersApi = {
     api
       .delete(`/ai-suppliers/${supplierId}/models/${modelId}`)
       .then((r) => r.data),
+  fetchRemoteModels: (data: { supplier_id?: number; base_url?: string; api_key?: string }) =>
+    api.post<{ models: Array<{ id: string; owned_by?: string }> }>("/ai-suppliers/remote-models", data).then((r) => r.data),
+  addModelsBatch: (supplierId: number, model_ids: string[]) =>
+    api.post<{ ok: boolean; added: number }>(`/ai-suppliers/${supplierId}/models/batch`, { model_ids }).then((r) => r.data),
+  testModel: (data: { supplier_id?: number; model_id: string; base_url?: string; api_key?: string; timeout_ms?: number }) =>
+    api.post<{ ok: boolean; latency_ms: number; reply?: string; vision_supported: boolean; vision_error?: string; error?: string }>("/ai-suppliers/test", data).then((r) => r.data),
 };
 
 // ── Data Import / Export ───────────────────────────────────────────────────────

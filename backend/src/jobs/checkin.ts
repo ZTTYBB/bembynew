@@ -295,7 +295,10 @@ export async function callAI(
   maxTokens = 200,
   modelOverride?: string,
 ): Promise<{ response: string }> {
-  return callAIWithCreds(images, prompt, maxTokens, resolveAICreds(modelOverride));
+  if (modelOverride) {
+    return callAIWithCreds(images, prompt, maxTokens, resolveAICreds(modelOverride));
+  }
+  return callAIWithFallback(images, prompt, maxTokens);
 }
 
 /**
@@ -323,13 +326,33 @@ async function callAIWithFallback(
     }
   }
 
+  // Vision-aware sorting: if images are present, prioritize models that likely support vision
+  if (images.length > 0 && candidates.length > 1) {
+    const isVision = (id: string) => /vision|4o|flash|sonnet|vl|image/i.test(id);
+    candidates.sort((a, b) => {
+      const aV = isVision(a.modelId);
+      const bV = isVision(b.modelId);
+      if (aV && !bV) return -1;
+      if (!aV && bV) return 1;
+      return 0;
+    });
+  }
+
   let lastError: Error = new Error('AI API key not configured — set it in Settings');
-  for (const creds of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const creds = candidates[i];
     if (!creds.apiKey) continue;
     try {
-      return await callAIWithCreds(images, prompt, maxTokens, creds);
+      const res = await callAIWithCreds(images, prompt, maxTokens, creds);
+      if (i > 0) {
+        console.log(`[ai-fallback] Successfully fell back to candidate ${i + 1}/${candidates.length} "${creds.modelId}" (${creds.baseUrl})`);
+      }
+      return res;
     } catch (err: any) {
       lastError = err;
+      const msg = err?.message ?? String(err);
+      console.warn(`[ai-fallback] Candidate ${i + 1}/${candidates.length} "${creds.modelId}" failed: ${msg}`);
+      // Continue to next candidate
     }
   }
   throw lastError;
