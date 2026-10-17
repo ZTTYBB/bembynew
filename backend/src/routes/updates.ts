@@ -14,7 +14,7 @@ import {
 const router = Router();
 
 const CHECK_TIMEOUT_MS = 8_000;
-const UPGRADE_TIMEOUT_MS = 15_000;
+const UPGRADE_TIMEOUT_MS = 60_000;
 const CACHE_TTL_MS = 6 * 60 * 60_000;
 
 type GithubRelease = {
