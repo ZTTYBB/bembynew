@@ -251,6 +251,26 @@
               </label>
               <div style="font-size:11px;color:#aaa;margin-top:4px;padding-left:24px">{{ t('jobs.sequencePlayHint') }}</div>
             </div>
+            <div v-if="embyCfg.sequencePlay" class="form-group" style="margin-top:4px;padding-left:24px">
+              <label class="form-label" style="font-size:12px">{{ t('jobs.labelMaxEpisodesPerRun') }}</label>
+              <input
+                v-model.number="embyCfg.maxEpisodesPerRun"
+                type="number"
+                min="1"
+                max="20"
+                class="form-input"
+                style="max-width:140px"
+                :placeholder="t('jobs.maxEpisodesPlaceholder')"
+              />
+              <div style="font-size:11px;color:#aaa;margin-top:4px">{{ t('jobs.maxEpisodesHint') }}</div>
+            </div>
+            <div class="form-group" style="margin-top:4px">
+              <label class="form-check">
+                <input v-model="embyCfg.avoidPeakHours" type="checkbox" />
+                <span>{{ t('jobs.labelAvoidPeakHours') }}</span>
+              </label>
+              <div style="font-size:11px;color:#aaa;margin-top:4px;padding-left:24px">{{ t('jobs.avoidPeakHoursHint') }}</div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
@@ -1634,7 +1654,7 @@ function defaultAutoregCfg(): AutoregCfgForm {
 }
 const autoregCfg = reactive<AutoregCfgForm>(defaultAutoregCfg());
 
-const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrl: string; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; library: string }>({
+const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrl: string; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; avoidPeakHours: boolean; maxEpisodesPerRun: number | string; library: string }>({
   username: '',
   password: '',
   playDuration: '', playDurationMax: '', backupUrl: '',
@@ -1643,6 +1663,8 @@ const embyCfg = reactive<{ username: string; password: string; playDuration: num
   verifyPlayable: true,
   realWatch: false,
   sequencePlay: false,
+  avoidPeakHours: false,
+  maxEpisodesPerRun: '',
   library: '',
 });
 const tplProxyId = ref('');
@@ -1805,6 +1827,8 @@ function buildConfig(): EmbywatchConfig | CustomConfig | AutoregConfig | null {
     cfg.verifyPlayable = embyCfg.verifyPlayable;
     cfg.realWatch = embyCfg.realWatch;
     cfg.sequencePlay = embyCfg.sequencePlay;
+    if (embyCfg.avoidPeakHours) cfg.avoidPeakHours = true;
+    if (embyCfg.maxEpisodesPerRun !== '') cfg.maxEpisodesPerRun = Number(embyCfg.maxEpisodesPerRun);
     if (embyCfg.library) cfg.library = embyCfg.library;
     if (tplProxyId.value) cfg.proxyId = tplProxyId.value;
     return cfg as EmbywatchConfig;
@@ -2141,6 +2165,8 @@ function openEdit(tpl: JobTemplate) {
           verifyPlayable: c.verifyPlayable !== false,
           realWatch: c.realWatch === true,
           sequencePlay: c.sequencePlay === true,
+          avoidPeakHours: c.avoidPeakHours === true,
+          maxEpisodesPerRun: c.maxEpisodesPerRun ?? '',
           library: c.library ?? '',
         });
         tplProxyId.value = c.proxyId ?? '';

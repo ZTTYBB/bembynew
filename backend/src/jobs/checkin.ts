@@ -94,6 +94,10 @@ class BotReplyTimeoutError extends Error {
   }
 }
 
+/** Regex to match bot messages indicating checkin was already performed today. */
+export const ALREADY_CHECKED_IN_RE =
+  /今日已签|已签到|您今天已|重复签到|今日已打卡|已经签到|签到过了|今天已经|您今日已|already checked in|already signed|already checked-in/i;
+
 // ── Command template expansion ────────────────────────────────────────────────
 
 const LOWER = 'abcdefghijklmnopqrstuvwxyz';
@@ -1153,6 +1157,14 @@ export async function runCheckin(
     log.commandResponseImages = parsed.images;
     log.availableButtons = parsed.buttons;
 
+    const commandText = htmlToText(parsed.html || '');
+    if (ALREADY_CHECKED_IN_RE.test(commandText)) {
+      console.log(`[checkin] Bot reply indicates already checked in today: "${commandText.slice(0, 80)}"`);
+      log.buttonClicked = "今日已签 (提前完成)";
+      log.totalMs = Date.now() - attemptStart;
+      return log;
+    }
+
     let buttonsMsg = [...messages].reverse().find(m => (m as any).replyMarkup instanceof Api.ReplyInlineMarkup);
     // Some bots keep the actionable menu on a pinned message and reply to the
     // command with plain text. Search that menu before declaring the reply
@@ -1299,6 +1311,11 @@ export async function runCheckin(
           if (answer?.message) log.callbackAnswer = answer.message;
           console.log(`[checkin] callback answer: message="${answer?.message ?? ''}" url="${(answer as any)?.url ?? ''}" alert=${(answer as any)?.alert ?? false}`);
           clicked = true;
+          if (answer?.message && ALREADY_CHECKED_IN_RE.test(answer.message)) {
+            console.log(`[checkin] Callback toast indicates already checked in today: "${answer.message}"`);
+            log.totalMs = Date.now() - attemptStart;
+            return log;
+          }
           // The bot may answer with a URL to open (a web checkin / CF page).
           if ((answer as any)?.url) urlToOpen = (answer as any).url as string;
 
@@ -1325,6 +1342,11 @@ export async function runCheckin(
               log.buttonResponseHasMedia = bp.hasMedia || undefined;
               log.buttonResponseImage = bp.images[0];
               log.buttonResponseButtons = bp.buttons.length ? bp.buttons : undefined;
+            }
+            if (ALREADY_CHECKED_IN_RE.test(htmlToText(bp.html || ''))) {
+              console.log(`[checkin] Button response indicates already checked in today`);
+              log.totalMs = Date.now() - attemptStart;
+              return log;
             }
             // A follow-up URL / Mini App button (e.g. "我不是机器人") takes precedence
             // as the step that actually completes the checkin.
@@ -1363,7 +1385,14 @@ export async function runCheckin(
     }
 
     const notFoundLabel = isAiBtn(checkinButton) ? `{aiBtn} -> "${targetText}"` : `"${checkinButton}"`;
-    if (!clicked) throw new Error(`Button ${notFoundLabel} not found in bot reply`);
+    if (!clicked) {
+      if (ALREADY_CHECKED_IN_RE.test(commandText) || (log.callbackAnswer && ALREADY_CHECKED_IN_RE.test(log.callbackAnswer))) {
+        log.buttonClicked = "今日已签 (提前完成)";
+        log.totalMs = Date.now() - attemptStart;
+        return log;
+      }
+      throw new Error(`Button ${notFoundLabel} not found in bot reply`);
+    }
 
     // The verify/CF prompt is often one of several follow-up messages, so fall
     // back to scanning recent messages if the raced reply didn't carry it.

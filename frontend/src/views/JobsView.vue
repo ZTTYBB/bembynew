@@ -382,6 +382,26 @@
             </label>
             <div style="font-size:11px;color:#aaa;margin-top:4px;padding-left:24px">{{ t('jobs.sequencePlayHint') }}</div>
           </div>
+          <div v-if="embyCfg.sequencePlay" class="form-group" style="margin-top:4px;padding-left:24px">
+            <label class="form-label" style="font-size:12px">{{ t('jobs.labelMaxEpisodesPerRun') }}</label>
+            <input
+              v-model.number="embyCfg.maxEpisodesPerRun"
+              type="number"
+              min="1"
+              max="20"
+              class="form-input"
+              style="max-width:140px"
+              :placeholder="t('jobs.maxEpisodesPlaceholder')"
+            />
+            <div style="font-size:11px;color:#aaa;margin-top:4px">{{ t('jobs.maxEpisodesHint') }}</div>
+          </div>
+          <div class="form-group" style="margin-top:4px">
+            <label class="form-check">
+              <input v-model="embyCfg.avoidPeakHours" type="checkbox" />
+              <span>{{ t('jobs.labelAvoidPeakHours') }}</span>
+            </label>
+            <div style="font-size:11px;color:#aaa;margin-top:4px;padding-left:24px">{{ t('jobs.avoidPeakHoursHint') }}</div>
+          </div>
         </template>
         <!-- embywatch optional account (always shown, job-specific) -->
         <div v-if="form.jobType === 'embywatch' && accounts.length > 0" class="form-group" style="margin-top:8px">
@@ -1734,7 +1754,7 @@ const extractSource = ref<Job | null>(null);
 const extractName = ref('');
 const extractError = ref('');
 const extractSaving = ref(false);
-const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrls: string[]; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; library: string }>({
+const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrls: string[]; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; avoidPeakHours: boolean; maxEpisodesPerRun: number | string; library: string }>({
   username: '',
   password: '',
   playDuration: '', playDurationMax: '', backupUrls: [],
@@ -1743,6 +1763,8 @@ const embyCfg = reactive<{ username: string; password: string; playDuration: num
   verifyPlayable: true,
   realWatch: false,
   sequencePlay: false,
+  avoidPeakHours: false,
+  maxEpisodesPerRun: '',
   library: '',
 });
 const embyUaDropdown = ref('');
@@ -2290,6 +2312,8 @@ function openEdit(j: Job) {
           verifyPlayable: c.verifyPlayable !== false,
           realWatch: c.realWatch === true,
           sequencePlay: c.sequencePlay === true,
+          avoidPeakHours: c.avoidPeakHours === true,
+          maxEpisodesPerRun: c.maxEpisodesPerRun ?? '',
           library: c.library ?? '',
         });
         setUaState(j.templateId ? '' : (c.userAgent ?? ''));
@@ -2500,6 +2524,8 @@ function buildConfig(): EmbywatchConfig | CustomConfig | AutoregConfig | Checkin
     cfg.verifyPlayable = embyCfg.verifyPlayable;
     cfg.realWatch = embyCfg.realWatch;
     cfg.sequencePlay = embyCfg.sequencePlay;
+    if (embyCfg.avoidPeakHours) cfg.avoidPeakHours = true;
+    if (embyCfg.maxEpisodesPerRun !== '') cfg.maxEpisodesPerRun = Number(embyCfg.maxEpisodesPerRun);
     if (embyCfg.library) cfg.library = embyCfg.library;
     return cfg;
   }

@@ -975,7 +975,10 @@ async function playSegment(
   let elapsed = 0;
   try {
     while (elapsed < watchSeconds) {
-      const wait = Math.min(PROGRESS_INTERVAL_S, watchSeconds - elapsed);
+      // Natural jitter: vary the interval slightly (±3s) to simulate realistic player network activity
+      const jitter = Math.floor(Math.random() * 7) - 3;
+      const nominal = Math.max(10, PROGRESS_INTERVAL_S + jitter);
+      const wait = Math.min(nominal, watchSeconds - elapsed);
 
       if (streamer) {
         // Pull this interval's byte window while waiting, so real streaming
@@ -1348,6 +1351,9 @@ async function runSequencePlay(
   let totalStreamed = 0;
   let episodesCompleted = 0;
   const episodes: EmbywatchEpisode[] = [];
+  const maxEpisodes = typeof config.maxEpisodesPerRun === 'number' && config.maxEpisodesPerRun > 0
+    ? config.maxEpisodesPerRun
+    : 2;
 
   for (let i = 0; i < MAX_SEQUENCE_SEGMENTS && cur && budget > 0; i++) {
     throwIfAborted(ctx.signal);
@@ -1396,6 +1402,10 @@ async function runSequencePlay(
     }
 
     if (!finished) break; // budget exhausted mid-item; leave the partial in resume
+    if (episodesCompleted >= maxEpisodes) {
+      console.log(`[embywatch] Sequence Play: reached episode limit (${maxEpisodes}), ending sequence`);
+      break;
+    }
     cur = await getNextEpisode(serverUrl, ctx, cur.item, verifyPlayable);
     curStart = 0;
   }

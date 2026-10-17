@@ -291,5 +291,17 @@ describe("pickNextRun", () => {
         );
       }
     });
+
+    it("avoids scheduling inside peak hours 20:00 - 23:00 when avoidPeakHours is true", () => {
+      setNow("10:00:00");
+      // Window spanning 18:00 to 23:59
+      for (let i = 0; i < 30; i++) {
+        const result = pickNextRun(1800, 2359, TZ, 0, {
+          avoidPeakHours: true,
+        });
+        // Hour should NOT be 20, 21, or 22
+        expect([20, 21, 22].includes(result.hour)).toBe(false);
+      }
+    });
   });
 });

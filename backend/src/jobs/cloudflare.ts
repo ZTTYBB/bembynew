@@ -150,6 +150,8 @@ export type CheckinPageResult = {
   trace?: string[];
   /** One entry per `open_url` sub-step run on the page, with its screenshot. */
   webSteps?: WebStepLog[];
+  /** Deep link back to Telegram bot if emitted by the mini app (e.g. via postEvent or navigation). */
+  returnTgLink?: string;
 };
 
 /**
@@ -863,16 +865,34 @@ async function solveCap(page: Page, deadline: number): Promise<boolean> {
 const WEBVIEW_PROXY_SHIM = `
   window.TelegramWebviewProxy = window.TelegramWebviewProxy || {
     postEvent: function (type, data) {
+      try {
+        if (type === 'web_app_open_tg_link' || type === 'web_app_open_link') {
+          const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+          window.__bemby_tg_link = parsed?.path_full || parsed?.url || (typeof data === 'string' ? data : JSON.stringify(data));
+        }
+      } catch (e) {}
       try { window.dispatchEvent(new CustomEvent('tg-post', { detail: { type: type, data: data } })); } catch (e) {}
     },
   };
+  (function() {
+    try {
+      const origOpen = window.open;
+      window.open = function(url) {
+        if (url && (String(url).includes('t.me') || String(url).startsWith('tg://'))) {
+          window.__bemby_tg_link = String(url);
+        }
+        return origOpen ? origOpen.apply(this, arguments) : null;
+      };
+    } catch (e) {}
+  })();
 `;
 
 // Labels that clearly mean "check in", and the states that mean it is already done.
-// Deliberately narrow: only a control carrying such a label is pressed, so nothing
-// else in the app (points spending, lotteries) can be triggered.
-const IN_APP_LABEL_RE = /签到|簽到|打卡|领取|領取|check\s?-?in|sign\s?-?in/i;
-const IN_APP_DONE_RE = /已签到|已簽到|已打卡|已领取|已領取|已完成|already/i;
+// Broadened to include verification completion buttons for Mini App checkin flows.
+const IN_APP_LABEL_RE =
+  /签到|簽到|打卡|领取|領取|完成验证|完成驗證|提交验证|立即验证|确认验证|完成签到|完成|confirm\s?verification|complete\s?verification|verify|check\s?-?in|sign\s?-?in/i;
+const IN_APP_DONE_RE =
+  /已签到|已簽到|已打卡|已领取|已領取|已完成|今日已签|今日已打卡|already/i;
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -3346,10 +3366,17 @@ async function attemptLoad(
     browserTier = launched.tier;
     const page = launched.page;
 
+    let returnTgLink: string | undefined;
     page.on("crash", () => note("page crashed"));
     page.on("pageerror", (err: Error) => note(`page script error: ${err?.message ?? err}`));
     page.on("requestfailed", (req) => {
       if (req.isNavigationRequest()) note(`request failed: ${req.failure()?.errorText}`);
+    });
+    page.on("request", (req) => {
+      const u = req.url();
+      if (u.startsWith("tg://") || (u.includes("t.me/") && (u.includes("start=") || u.includes("startapp=")))) {
+        returnTgLink = u;
+      }
     });
 
     // In dev the backend runs via tsx/esbuild, which wraps functions passed to
@@ -3557,6 +3584,11 @@ async function attemptLoad(
           { ok: solved && !webFailure, reason: solved ? webFailure : challengeRefused(challenged, navError) }
         : { ok: solved, reason: solved ? undefined : challengeRefused(challenged, navError) };
 
+    const injectedLink = await page.evaluate(() => (window as any).__bemby_tg_link || null).catch(() => null);
+    if (injectedLink && !returnTgLink) {
+      returnTgLink = String(injectedLink);
+    }
+
     return {
       ok: verdict.ok,
       challenged,
@@ -3574,6 +3606,7 @@ async function attemptLoad(
       browserTier,
       exitRelated: solved && webFailure ? false : !!navError || (challenged && !verdict.ok) || !text.trim(),
       screenshot: opts.screenshot ? await screenshotOf(page) : undefined,
+      returnTgLink,
     };
   } catch (err: any) {
     const msg = err?.message ?? String(err);

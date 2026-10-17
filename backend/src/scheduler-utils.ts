@@ -16,6 +16,8 @@ export type PickNextRunOptions = {
    * cycle for no reason. Ignored while the window is still open.
    */
   catchUp?: boolean;
+  /** Avoid scheduling within peak hours (20:00 - 23:00 local time). */
+  avoidPeakHours?: boolean;
 };
 
 /** How long after a catch-up decision the run is placed. */
@@ -37,8 +39,25 @@ function pickTimeRange(
   opts: PickNextRunOptions,
 ): DateTime {
   const span = Math.max(1, Math.floor(endDt.diff(startDt, "minutes").minutes));
-  const randomPick = () =>
-    startDt.plus({ minutes: Math.floor(Math.random() * span) });
+
+  // Peak hours check: 20:00 to 23:00 (hours 20, 21, 22)
+  const isPeak = (dt: DateTime) => Boolean(opts.avoidPeakHours && dt.hour >= 20 && dt.hour < 23);
+  const validOffsets: number[] = [];
+  if (opts.avoidPeakHours) {
+    for (let m = 0; m < span; m++) {
+      if (!isPeak(startDt.plus({ minutes: m }))) {
+        validOffsets.push(m);
+      }
+    }
+  }
+
+  const randomPick = () => {
+    if (validOffsets.length > 0) {
+      const offset = validOffsets[Math.floor(Math.random() * validOffsets.length)];
+      return startDt.plus({ minutes: offset });
+    }
+    return startDt.plus({ minutes: Math.floor(Math.random() * span) });
+  };
 
   const gapMs = (opts.gapMinutes ?? 0) * 60_000;
   const occupied = opts.occupied ?? [];
@@ -54,10 +73,11 @@ function pickTimeRange(
     if (clearance(candidate) >= gapMs) return candidate;
   }
 
-  let best = startDt;
+  const searchOffsets = validOffsets.length > 0 ? validOffsets : Array.from({ length: span }, (_, i) => i);
+  let best = startDt.plus({ minutes: searchOffsets[0] ?? 0 });
   let bestClearance = clearance(best);
-  for (let m = 1; m < span; m++) {
-    const candidate = startDt.plus({ minutes: m });
+  for (let idx = 1; idx < searchOffsets.length; idx++) {
+    const candidate = startDt.plus({ minutes: searchOffsets[idx] });
     const c = clearance(candidate);
     if (c > bestClearance) {
       best = candidate;

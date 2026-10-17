@@ -19,6 +19,8 @@ import {
   buildCaptchaPrompt,
   findUrlButton,
   callAI,
+  ALREADY_CHECKED_IN_RE,
+  htmlToText,
 } from "./checkin";
 import { escapeHtml } from "../tg/htmlEscape";
 import {
@@ -83,6 +85,41 @@ import {
   runMiniAppHttp,
   type MiniAppHttpAction,
 } from "./miniAppHttp";
+
+function parseTgReturnLink(link: string): { bot?: string; startCmd: string } | null {
+  try {
+    const clean = link.trim();
+    let url: URL | null = null;
+    try {
+      if (clean.startsWith("http://") || clean.startsWith("https://")) {
+        url = new URL(clean);
+      } else if (clean.startsWith("tg://")) {
+        url = new URL(clean.replace("tg://resolve?", "https://t.me/?").replace("tg://", "https://t.me/"));
+      }
+    } catch {}
+
+    if (url) {
+      const domain = url.searchParams.get("domain") || url.pathname.replace(/^\/+/, "").split("/")[0];
+      const startParam = url.searchParams.get("start") || url.searchParams.get("startapp");
+      const bot = domain && !domain.includes(".") ? domain : undefined;
+      const startCmd = startParam ? `/start ${startParam}` : "/start";
+      return { bot, startCmd };
+    }
+
+    const m1 = /^\/?start(?:=|\s+)(.*)$/i.exec(clean);
+    if (m1) {
+      return { startCmd: m1[1] ? `/start ${m1[1].trim()}` : "/start" };
+    }
+    const m2 = /^([a-zA-Z0-9_]+)\?(?:start|startapp)=([^&]+)/i.exec(clean);
+    if (m2) {
+      return { bot: m2[1], startCmd: `/start ${m2[2]}` };
+    }
+    if (clean.toLowerCase().startsWith("/start")) {
+      return { startCmd: clean };
+    }
+  } catch {}
+  return null;
+}
 
 export type CustomJobLog = {
   steps: CustomStepLog[];
@@ -3461,6 +3498,32 @@ export async function runCustom(
                   ? `Opened "${hit.web.text}", pressed "${cf.inAppAction}"`
                   : `Opened "${hit.web.text}" (nothing pressed inside the app)`;
 
+                if (cf.returnTgLink) {
+                  const returnParsed = parseTgReturnLink(cf.returnTgLink);
+                  if (returnParsed) {
+                    const returnTarget = returnParsed.bot || target;
+                    console.log(`[custom] Mini App return link detected, auto-sending ${returnParsed.startCmd} to ${returnTarget}`);
+                    try {
+                      const returnReplyPromise = waitForReply(client, returnTarget, 15_000, undefined, undefined, signal);
+                      await client.sendMessage(returnTarget, { message: returnParsed.startCmd });
+                      const returnMsgs = await returnReplyPromise;
+                      if (returnMsgs.length) {
+                        const parsedReply = await parseMessages(returnMsgs, client, signal);
+                        const replyText = htmlToText(parsedReply.html || "");
+                        tagReplyTexts.push(replyText);
+                        step.result = (step.result ? `${step.result} | ` : "") + `Return: ${returnParsed.startCmd} -> ${replyText.slice(0, 80)}`;
+                      }
+                    } catch (err: any) {
+                      console.warn(`[custom] Mini App return auto-completion warning: ${err?.message ?? err}`);
+                    }
+                  }
+                }
+
+                if (ALREADY_CHECKED_IN_RE.test(cf.text) || (cf.inAppAction && /已签到|已打卡|已完成|already/i.test(cf.inAppAction))) {
+                  step.result = (step.result ? `${step.result} | ` : "") + "今日已签 (提前完成)";
+                  throw new AutomationFinish("success", "今日已签到");
+                }
+
                 if (action.failContains && cf.text.includes(action.failContains)) {
                   throw new Error(`Page indicates failure: "${action.failContains}" detected`);
                 }
@@ -3664,6 +3727,32 @@ export async function runCustom(
                   ? `Opened the Mini App, pressed "${cf.inAppAction}"${how}`
                   : `Opened the Mini App (nothing pressed inside it)${how}`;
 
+                if (cf.returnTgLink) {
+                  const returnParsed = parseTgReturnLink(cf.returnTgLink);
+                  if (returnParsed) {
+                    const returnTarget = returnParsed.bot || botUsername;
+                    console.log(`[custom] Mini App return link detected, auto-sending ${returnParsed.startCmd} to ${returnTarget}`);
+                    try {
+                      const returnReplyPromise = waitForReply(client, returnTarget, 15_000, undefined, undefined, signal);
+                      await client.sendMessage(returnTarget, { message: returnParsed.startCmd });
+                      const returnMsgs = await returnReplyPromise;
+                      if (returnMsgs.length) {
+                        const parsedReply = await parseMessages(returnMsgs, client, signal);
+                        const replyText = htmlToText(parsedReply.html || "");
+                        tagReplyTexts.push(replyText);
+                        step.result = (step.result ? `${step.result} | ` : "") + `Return: ${returnParsed.startCmd} -> ${replyText.slice(0, 80)}`;
+                      }
+                    } catch (err: any) {
+                      console.warn(`[custom] Mini App return auto-completion warning: ${err?.message ?? err}`);
+                    }
+                  }
+                }
+
+                if (ALREADY_CHECKED_IN_RE.test(cf.text) || (cf.inAppAction && /已签到|已打卡|已完成|already/i.test(cf.inAppAction))) {
+                  step.result = (step.result ? `${step.result} | ` : "") + "今日已签 (提前完成)";
+                  throw new AutomationFinish("success", "今日已签到");
+                }
+
                 if (action.failContains && cf.text.includes(action.failContains)) {
                   throw new Error(`Page indicates failure: "${action.failContains}" detected`);
                 }
@@ -3783,6 +3872,12 @@ export async function runCustom(
             runtime.set("reply_text", reply.text);
             if (reply.truncated) step.replyTextTruncated = true;
             actionSucceeded = true;
+
+            if (ALREADY_CHECKED_IN_RE.test(reply.text) || (step.callbackAnswer && ALREADY_CHECKED_IN_RE.test(step.callbackAnswer))) {
+              console.log(`[custom] Bot reply indicates already checked in today: "${(reply.text || step.callbackAnswer || '').slice(0, 80)}"`);
+              step.result = (step.result ? `${step.result} | ` : "") + "今日已签 (智能短路提前完成)";
+              throw new AutomationFinish("success", "今日已签到");
+            }
           } catch (err: any) {
             // Cancellation is never retried
             if (err?.message === "Job cancelled" || err instanceof AutomationFinish) throw err;

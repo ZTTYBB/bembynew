@@ -348,7 +348,14 @@ export async function executeJob(
 
 /** Stable fingerprint for auto plans; backup/import can recompute it after remapping IDs. */
 export function buildScheduleKey(job: Job, timezone: string): string {
-  const common = [job.scheduleWindowStart, job.scheduleWindowEnd, timezone, job.botUsername, job.accountId];
+  let avoidPeakHours = false;
+  if (job.jobType === "embywatch" && job.config) {
+    try {
+      const parsed = typeof job.config === "string" ? JSON.parse(job.config) : job.config;
+      avoidPeakHours = Boolean(parsed.avoidPeakHours);
+    } catch {}
+  }
+  const common = [job.scheduleWindowStart, job.scheduleWindowEnd, timezone, job.botUsername, job.accountId, avoidPeakHours];
   return JSON.stringify(job.runOnce
     ? [...common, "once", job.firstRunMinDays ?? 0, job.firstRunMaxDays ?? 0]
     : [...common, job.runEveryDays, job.runEveryDaysMax, checkDailyRunEnabled()]);
@@ -477,13 +484,21 @@ function scheduleOne(
     .filter((entry) => entry.job.id !== job.id)
     .map((entry) => entry.nextRun.getTime());
 
+  let avoidPeakHours = false;
+  if (job.jobType === "embywatch" && job.config) {
+    try {
+      const parsed = typeof job.config === "string" ? JSON.parse(job.config) : job.config;
+      avoidPeakHours = Boolean(parsed.avoidPeakHours);
+    } catch {}
+  }
+
   const timezone = resolveJobTimezone(job.timezone);
   const nextRun = pickNextRun(
     job.scheduleWindowStart,
     job.scheduleWindowEnd,
     timezone,
     daysAhead,
-    { occupied, gapMinutes: getScheduleGapMinutes(), catchUp },
+    { occupied, gapMinutes: getScheduleGapMinutes(), catchUp, avoidPeakHours },
   );
   const plan = scheduleStore().save({
     jobId: job.id, nextRun: nextRun.toUTC().toISO()!, timezone, pinned: false,

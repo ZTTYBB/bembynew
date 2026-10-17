@@ -789,6 +789,16 @@ export type EmbywatchConfig = {
    * the user's library list. If it doesn't resolve, the whole server is used.
    */
   library?: string;
+  /**
+   * Avoid peak hours (20:00 - 23:00 local time) when scheduling playback.
+   * Helps prevent server operator bans and traffic restrictions. Defaults to false.
+   */
+  avoidPeakHours?: boolean;
+  /**
+   * Maximum episodes to complete in a single Sequence Play run.
+   * Protects against over-watching short clips/episodes. Defaults to 2.
+   */
+  maxEpisodesPerRun?: number;
 };
 
 /**
