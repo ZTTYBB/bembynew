@@ -868,7 +868,11 @@ const WEBVIEW_PROXY_SHIM = `
       try {
         if (type === 'web_app_open_tg_link' || type === 'web_app_open_link') {
           const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-          window.__bemby_tg_link = parsed?.path_full || parsed?.url || (typeof data === 'string' ? data : JSON.stringify(data));
+          let link = parsed?.path_full || parsed?.url || (typeof data === 'string' ? data : JSON.stringify(data));
+          if (link && typeof link === 'string') {
+            if (link.startsWith('/')) link = 'https://t.me' + link;
+            window.__bemby_tg_link = link;
+          }
         }
       } catch (e) {}
       try { window.dispatchEvent(new CustomEvent('tg-post', { detail: { type: type, data: data } })); } catch (e) {}
@@ -878,8 +882,12 @@ const WEBVIEW_PROXY_SHIM = `
     try {
       const origOpen = window.open;
       window.open = function(url) {
-        if (url && (String(url).includes('t.me') || String(url).startsWith('tg://'))) {
-          window.__bemby_tg_link = String(url);
+        if (url) {
+          let str = String(url);
+          if (str.startsWith('/')) str = 'https://t.me' + str;
+          if (str.includes('t.me') || str.startsWith('tg://')) {
+            window.__bemby_tg_link = str;
+          }
         }
         return origOpen ? origOpen.apply(this, arguments) : null;
       };
@@ -1532,7 +1540,21 @@ async function runInAppClicks(
 
     // What the page reads now, so a click on something inert can be told from a real one
     const before = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
-    const click = await clickInAppControl(page, step);
+    // For in-app controls that render asynchronously after challenge or fetch (e.g. verify completion button),
+    // poll for a genuine control (non-weak) before settling for a weak text match or giving up.
+    let click: ClickOutcome | undefined;
+    const pollDeadline = Math.min(Date.now() + 8_000, deadline);
+    while (Date.now() < pollDeadline) {
+      const cand = await clickInAppControl(page, step);
+      if (cand && !cand.weak) {
+        click = cand;
+        break;
+      }
+      await sleep(500, pollDeadline);
+    }
+    if (!click) {
+      click = await clickInAppControl(page, step);
+    }
     if (!click) {
       // A label that never appears is worth reporting: the app may have changed
       if (step) done.push(`"${step}" not found`);
@@ -3463,9 +3485,9 @@ async function attemptLoad(
           if (await challengeGone(page)) return true;
           continue;
         }
-        // Portal navigated away or shows a success message.
+        // Portal navigated away or shows a genuine success message (when no widget is gating).
         if (withoutHash(page.url()) !== startUrl) return true;
-        if (SUCCESS_RE.test(body)) return true;
+        if (!widget && SUCCESS_RE.test(body) && !/(?:验证|驗證)(?:通过|通過)后/i.test(body)) return true;
       }
       return false;
     };
@@ -3584,7 +3606,18 @@ async function attemptLoad(
           { ok: solved && !webFailure, reason: solved ? webFailure : challengeRefused(challenged, navError) }
         : { ok: solved, reason: solved ? undefined : challengeRefused(challenged, navError) };
 
-    const injectedLink = await page.evaluate(() => (window as any).__bemby_tg_link || null).catch(() => null);
+    const injectedLink = await page.evaluate(() => {
+      if ((window as any).__bemby_tg_link) return (window as any).__bemby_tg_link;
+      const btn = document.querySelector('#return-bot, a[href*="start="], a[href*="t.me"]');
+      if (btn) {
+        let href = btn.getAttribute('href');
+        if (href && (href.includes('start=') || href.includes('startapp=') || href.includes('t.me/'))) {
+          if (href.startsWith('/')) href = 'https://t.me' + href;
+          return href;
+        }
+      }
+      return null;
+    }).catch(() => null);
     if (injectedLink && !returnTgLink) {
       returnTgLink = String(injectedLink);
     }

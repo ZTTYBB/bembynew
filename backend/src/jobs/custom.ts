@@ -88,7 +88,10 @@ import {
 
 function parseTgReturnLink(link: string): { bot?: string; startCmd: string } | null {
   try {
-    const clean = link.trim();
+    let clean = link.trim();
+    if (/^\/[a-zA-Z0-9_]+\?/i.test(clean)) {
+      clean = "https://t.me" + clean;
+    }
     let url: URL | null = null;
     try {
       if (clean.startsWith("http://") || clean.startsWith("https://")) {
@@ -110,7 +113,7 @@ function parseTgReturnLink(link: string): { bot?: string; startCmd: string } | n
     if (m1) {
       return { startCmd: m1[1] ? `/start ${m1[1].trim()}` : "/start" };
     }
-    const m2 = /^([a-zA-Z0-9_]+)\?(?:start|startapp)=([^&]+)/i.exec(clean);
+    const m2 = /^\/?([a-zA-Z0-9_]+)\?(?:start|startapp)=([^&]+)/i.exec(clean);
     if (m2) {
       return { bot: m2[1], startCmd: `/start ${m2[2]}` };
     }
