@@ -152,3 +152,51 @@ export function pickNextRun(
     : atMinute(targetDay, endMin);
   return pickTimeRange(startDt, endDt, options);
 }
+
+/** Bounds for a job's same-day retry interval, in hours. 0 turns the feature off. */
+export const SAME_DAY_RETRY_MAX_HOURS = 23;
+
+/** A retry never lands closer than this to the failure that triggered it. */
+const SAME_DAY_RETRY_MIN_GAP_MINUTES = 10;
+
+/** Random slack added to the interval so retries do not fall on a fixed beat. */
+const SAME_DAY_RETRY_JITTER_MINUTES = 10;
+
+/** First hour of the day's closing slot. A failure at or after it is not retried. */
+const LAST_HOUR = 23;
+
+/**
+ * When to run a job again after it failed, or null to leave it to the normal
+ * schedule.
+ *
+ * The retry is for the rest of today only. It lands `hours` after `now` (plus a
+ * few minutes of jitter). When that would fall on the next day, or inside the
+ * peak hours a job asked to avoid, the job instead runs once at a random minute
+ * of the day's last hour. A failure that happens in that last hour is not
+ * retried, so nothing carries into tomorrow.
+ *
+ * The job's own time window is deliberately ignored: the point is to try again
+ * soon, not to wait for the window.
+ */
+export function pickSameDayRetry(
+  now: DateTime,
+  hours: number,
+  options: { avoidPeakHours?: boolean } = {},
+): DateTime | null {
+  if (!Number.isInteger(hours) || hours < 1 || hours > SAME_DAY_RETRY_MAX_HOURS) return null;
+  if (now.hour >= LAST_HOUR) return null;
+
+  const jitter = Math.floor(Math.random() * (SAME_DAY_RETRY_JITTER_MINUTES + 1));
+  const candidate = now.plus({ hours, minutes: jitter });
+  const peak = Boolean(options.avoidPeakHours) && candidate.hour >= 20 && candidate.hour < 23;
+  if (candidate.hasSame(now, "day") && !peak) return candidate;
+
+  const endOfDay = now.startOf("day").plus({ days: 1 });
+  const earliest = DateTime.max(
+    now.startOf("day").set({ hour: LAST_HOUR }),
+    now.plus({ minutes: SAME_DAY_RETRY_MIN_GAP_MINUTES }),
+  );
+  const span = Math.floor(endOfDay.diff(earliest, "minutes").minutes);
+  if (span < 1) return null;
+  return earliest.plus({ minutes: Math.floor(Math.random() * span) });
+}

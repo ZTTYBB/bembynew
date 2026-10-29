@@ -219,7 +219,24 @@
             </div>
             <div class="form-group">
               <label class="form-label">{{ t('jobs.labelBackupUrl') }}</label>
-              <input v-model.trim="embyCfg.backupUrl" class="form-input" type="text" placeholder="https://emby.backup.com" />
+              <div v-for="(_, i) in embyCfg.backupUrls" :key="i" class="backup-url-row">
+                <input
+                  v-model.trim="embyCfg.backupUrls[i]"
+                  class="form-input"
+                  type="text"
+                  placeholder="https://emby.backup.com"
+                />
+                <button
+                  class="btn btn-ghost btn-sm"
+                  :title="t('common.delete')"
+                  @click="embyCfg.backupUrls.splice(i, 1)"
+                >
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <button class="btn btn-ghost btn-sm" @click="embyCfg.backupUrls.push('')">
+                <i class="fa-solid fa-plus"></i> {{ t('jobs.addBackupUrl') }}
+              </button>
               <div style="font-size:11px;color:#aaa;margin-top:4px">{{ t('jobs.backupUrlHint') }}</div>
             </div>
             <div class="emby-rules-hint">{{ t('jobs.playbackRulesHint') }}</div>
@@ -1074,6 +1091,14 @@
             <label class="form-check"><input v-model="form.exclusiveAccount" type="checkbox" /><span>{{ w('exclusiveAccount') }}</span></label>
             <div class="template-restart-risk">{{ w('exclusiveAccountHint') }}</div>
           </div>
+          <div class="form-group">
+            <label class="form-check"><input type="checkbox" :checked="form.retrySameDayHours > 0" @change="form.retrySameDayHours = ($event.target as HTMLInputElement).checked ? 6 : 0" /><span>{{ t('jobOptions.retrySameDay') }}</span></label>
+            <div v-if="form.retrySameDayHours > 0" style="margin-top:6px">
+              <label class="form-label" for="tpl-retry-hours">{{ t('jobOptions.retrySameDayHours') }}</label>
+              <input id="tpl-retry-hours" v-model.number="form.retrySameDayHours" class="form-input" type="number" min="1" max="23" step="1" style="max-width:120px" />
+            </div>
+            <div class="template-restart-risk">{{ t('jobOptions.retrySameDayHint') }}</div>
+          </div>
           <div v-if="form.runOnce" class="form-row">
             <div class="form-group">
               <label class="form-label">{{ w('firstRunMinDays') }}</label>
@@ -1586,6 +1611,7 @@ const form = reactive({
   category: '',
   runOnce: false,
   rerunOnRestart: false,
+  retrySameDayHours: 0,
   exclusiveAccount: false,
   firstRunMinDays: 0,
   firstRunMaxDays: 0,
@@ -1654,10 +1680,10 @@ function defaultAutoregCfg(): AutoregCfgForm {
 }
 const autoregCfg = reactive<AutoregCfgForm>(defaultAutoregCfg());
 
-const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrl: string; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; avoidPeakHours: boolean; maxEpisodesPerRun: number | string; library: string }>({
+const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrls: string[]; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; avoidPeakHours: boolean; maxEpisodesPerRun: number | string; library: string }>({
   username: '',
   password: '',
-  playDuration: '', playDurationMax: '', backupUrl: '',
+  playDuration: '', playDurationMax: '', backupUrls: [],
   userAgent: '',
   markWatched: true,
   verifyPlayable: true,
@@ -1720,7 +1746,7 @@ function onUaDropdownChange() {
 function onJobTypeChange() {
   customVariables.value = {};
   customOptions.value = [];
-  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
   tplProxyId.value = '';
@@ -1821,7 +1847,8 @@ function buildConfig(): EmbywatchConfig | CustomConfig | AutoregConfig | null {
     const cfg: Partial<EmbywatchConfig> = {};
     if (embyCfg.playDuration !== '') cfg.playDuration = Number(embyCfg.playDuration as string | number);
     if (embyCfg.playDurationMax !== '') cfg.playDurationMax = Number(embyCfg.playDurationMax as string | number);
-    if (embyCfg.backupUrl) cfg.backupUrl = embyCfg.backupUrl;
+    const backups = embyCfg.backupUrls.map(u => u.trim()).filter(Boolean);
+    if (backups.length) cfg.backupUrls = backups;
     if (embyCfg.userAgent) cfg.userAgent = embyCfg.userAgent;
     cfg.markWatched = embyCfg.markWatched;
     cfg.verifyPlayable = embyCfg.verifyPlayable;
@@ -2097,12 +2124,13 @@ function openAdd() {
     category: '',
     runOnce: false,
     rerunOnRestart: false,
+    retrySameDayHours: 0,
     exclusiveAccount: false,
     firstRunMinDays: 0,
     firstRunMaxDays: 0,
   });
   runEveryDaysText.value = '1';
-  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
   tplProxyId.value = '';
@@ -2134,6 +2162,7 @@ function openEdit(tpl: JobTemplate) {
     category: tpl.category ?? '',
     runOnce: tpl.runOnce ?? false,
     rerunOnRestart: tpl.rerunOnRestart ?? false,
+    retrySameDayHours: tpl.retrySameDayHours ?? 0,
     exclusiveAccount: tpl.exclusiveAccount ?? false,
     firstRunMinDays: tpl.firstRunMinDays ?? 0,
     firstRunMaxDays: tpl.firstRunMaxDays ?? 0,
@@ -2159,7 +2188,7 @@ function openEdit(tpl: JobTemplate) {
           password: '',
           playDuration: c.playDuration ?? '',
           playDurationMax: c.playDurationMax ?? '',
-          backupUrl: c.backupUrl ?? '',
+          backupUrls: c.backupUrls ? [...c.backupUrls] : (c.backupUrl ? [c.backupUrl] : []),
           userAgent: c.userAgent ?? '',
           markWatched: c.markWatched !== false,
           verifyPlayable: c.verifyPlayable !== false,
@@ -2172,15 +2201,15 @@ function openEdit(tpl: JobTemplate) {
         tplProxyId.value = c.proxyId ?? '';
         setUaState(c.userAgent ?? '');
       } catch {
-        Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+        Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
         embyUaDropdown.value = '';
       }
     } else {
-      Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+      Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
       embyUaDropdown.value = '';
     }
   } else if (tpl.jobType === 'custom') {
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     if (tpl.config) {
       try {
@@ -2265,7 +2294,7 @@ function openEdit(tpl: JobTemplate) {
       customJobMaxRetries.value = 1;
     }
   } else if (tpl.jobType === 'autoreg') {
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
     Object.assign(autoregCfg, defaultAutoregCfg());
@@ -2300,7 +2329,7 @@ function openEdit(tpl: JobTemplate) {
     }
   } else {
     // checkin
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrl: '', userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
     tplCheckinSuccessContains.value = '';
@@ -2328,6 +2357,9 @@ async function saveTemplate() {
   }
   if (!form.runOnce && !runEveryDaysValid.value) {
     formError.value = t('jobs.runEveryDaysHint'); return;
+  }
+  if (!(Number.isInteger(form.retrySameDayHours) && form.retrySameDayHours >= 0 && form.retrySameDayHours <= 23)) {
+    formError.value = t('jobOptions.invalidRetryHours'); return;
   }
   if (form.jobType === 'custom') {
     // No target bot needed: an action can name its own contact, or drive a page that
@@ -2646,7 +2678,7 @@ async function bulkMuteBotForever() {
   showToast(t('templates.bulkMuteBotForeverDone'));
 }
 
-const SHARE_KEYS: (keyof JobTemplate)[] = ['name', 'jobType', 'botUsername', 'timezone', 'replyTimeoutMs', 'retryMax', 'config', 'category', 'runOnce', 'rerunOnRestart', 'exclusiveAccount', 'firstRunMinDays', 'firstRunMaxDays', 'runEveryDays', 'runEveryDaysMax'];
+const SHARE_KEYS: (keyof JobTemplate)[] = ['name', 'jobType', 'botUsername', 'timezone', 'replyTimeoutMs', 'retryMax', 'config', 'category', 'runOnce', 'rerunOnRestart', 'retrySameDayHours', 'exclusiveAccount', 'firstRunMinDays', 'firstRunMaxDays', 'runEveryDays', 'runEveryDaysMax'];
 
 // The start command and the button are stored on every template, defaulted, but only these
 // job types read them -- a custom or embywatch template shared with them in tow reads as if
@@ -2947,5 +2979,16 @@ tbody tr:nth-child(even):not(.row-selected) td {
   .create-jobs-modal .form-row { display: grid; grid-template-columns: minmax(0, 1fr); }
   .create-jobs-modal .modal-footer { flex-wrap: wrap; }
   .create-jobs-selection { width: 100%; }
+}
+.backup-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.backup-url-row .form-input {
+  flex: 1;
+  min-width: 0;
 }
 </style>

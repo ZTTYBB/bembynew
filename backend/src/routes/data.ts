@@ -7,7 +7,7 @@ import { JobScheduleStore, type JobSchedule } from '../db/jobSchedules';
 import { ensureWarehouseSchema, warehouse } from '../db/warehouse';
 import { getExecutionStatus, readExecutionJob } from '../jobs/execution';
 import { ensureTaskQueueSchema } from '../jobs/taskQueue';
-import { normalizeJobOptions } from '../jobs/jobOptions';
+import { normalizeJobOptions, MAX_RETRY_SAME_DAY_HOURS } from '../jobs/jobOptions';
 import { mergeEmbyTemplateConfig, parseEmbyConfig, validateEffectiveEmbyDurations } from '../jobs/embyTemplate';
 import {
   verifyPassword,
@@ -139,6 +139,7 @@ type JobRow = {
   first_run_min_days: number;
   first_run_max_days: number;
   rerun_on_restart: number;
+  retry_same_day_hours: number;
   exclusive_account: number;
   last_success_at: string | null;
   last_attempt_at: string | null;
@@ -163,6 +164,7 @@ type TemplateRow = {
   first_run_min_days: number;
   first_run_max_days: number;
   rerun_on_restart: number;
+  retry_same_day_hours: number;
   exclusive_account: number;
   category: string;
 };
@@ -220,6 +222,7 @@ export type ExportPayload = {
     firstRunMinDays?: number;
     firstRunMaxDays?: number;
     rerunOnRestart?: boolean;
+    retrySameDayHours?: number;
     exclusiveAccount?: boolean;
     category?: string;
   }>;
@@ -246,6 +249,7 @@ export type ExportPayload = {
     firstRunMinDays?: number;
     firstRunMaxDays?: number;
     rerunOnRestart?: boolean;
+    retrySameDayHours?: number;
     exclusiveAccount?: boolean;
     lastSuccessAt?: string | null;
     lastAttemptAt?: string | null;
@@ -328,6 +332,17 @@ function decryptAccountsForExport(rows: AccountRow[]): AccountRow[] {
     }
     return account;
   });
+}
+
+/**
+ * Same-day retry hours from a backup. Backups made before the setting existed
+ * have no value, and a hand-edited one may hold anything, so anything that is
+ * not a whole number of hours in range means off rather than a failed import.
+ */
+function safeRetryHours(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= MAX_RETRY_SAME_DAY_HOURS
+    ? value
+    : 0;
 }
 
 function runInterval(value: unknown, fallback = 1): number {
@@ -456,6 +471,7 @@ router.post('/export', (req, res) => {
       firstRunMinDays: t.first_run_min_days ?? 0,
       firstRunMaxDays: t.first_run_max_days ?? 0,
       rerunOnRestart: Boolean(t.rerun_on_restart),
+      retrySameDayHours: t.retry_same_day_hours ?? 0,
       exclusiveAccount: Boolean(t.exclusive_account),
       category: t.category ?? '',
     })),
@@ -480,6 +496,7 @@ router.post('/export', (req, res) => {
       firstRunMinDays: j.first_run_min_days ?? 0,
       firstRunMaxDays: j.first_run_max_days ?? 0,
       rerunOnRestart: Boolean(j.rerun_on_restart),
+      retrySameDayHours: j.retry_same_day_hours ?? 0,
       exclusiveAccount: Boolean(j.exclusive_account),
       lastSuccessAt: j.last_success_at ?? null,
       lastAttemptAt: j.last_attempt_at ?? null,
@@ -731,8 +748,8 @@ router.post('/import', async (req, res) => {
         const result = db.prepare(
           `INSERT INTO job_templates
              (name, job_type, bot_username, timezone, reply_timeout_ms, retry_max, config, start_command, checkin_button, enabled, run_every_days, run_every_days_max,
-              run_once, first_run_min_days, first_run_max_days, category, rerun_on_restart, exclusive_account)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              run_once, first_run_min_days, first_run_max_days, category, rerun_on_restart, retry_same_day_hours, exclusive_account)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           t.name,
           t.jobType ?? 'checkin',
@@ -751,6 +768,7 @@ router.post('/import', async (req, res) => {
           t.firstRunMaxDays ?? 0,
           t.category ?? '',
           t.rerunOnRestart ? 1 : 0,
+          safeRetryHours(t.retrySameDayHours),
           t.exclusiveAccount ? 1 : 0,
         );
 
@@ -772,8 +790,8 @@ router.post('/import', async (req, res) => {
            (account_id, template_id, name, job_type, bot_username, schedule_window_start, schedule_window_end,
             timezone, reply_timeout_ms, retry_max, enabled, config, start_command, checkin_button,
             run_every_days, run_every_days_max, last_success_at, retired,
-            run_once, first_run_min_days, first_run_max_days, last_attempt_at, rerun_on_restart, exclusive_account)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            run_once, first_run_min_days, first_run_max_days, last_attempt_at, rerun_on_restart, retry_same_day_hours, exclusive_account)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         resolvedAccountId,
         resolvedTemplateId,
@@ -798,6 +816,7 @@ router.post('/import', async (req, res) => {
         j.firstRunMaxDays ?? 0,
         j.lastAttemptAt ?? j.lastSuccessAt ?? null,
         j.rerunOnRestart ? 1 : 0,
+        safeRetryHours(j.retrySameDayHours),
         j.exclusiveAccount ? 1 : 0,
       );
       if (j.schedule) importedSchedules.push({ jobId: Number(imported.lastInsertRowid), plan: j.schedule });

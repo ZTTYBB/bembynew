@@ -64,7 +64,7 @@ const SCHEMA = `
     run_every_days_max INTEGER,
     category         TEXT NOT NULL DEFAULT '',
     run_once         INTEGER NOT NULL DEFAULT 0,
-    rerun_on_restart INTEGER NOT NULL DEFAULT 0,
+    rerun_on_restart INTEGER NOT NULL DEFAULT 0, retry_same_day_hours INTEGER NOT NULL DEFAULT 0,
     first_run_min_days INTEGER NOT NULL DEFAULT 0,
     first_run_max_days INTEGER NOT NULL DEFAULT 0
   );
@@ -89,7 +89,7 @@ const SCHEMA = `
     run_every_days        INTEGER NOT NULL DEFAULT 1,
     run_every_days_max    INTEGER,
     run_once              INTEGER NOT NULL DEFAULT 0,
-    rerun_on_restart       INTEGER NOT NULL DEFAULT 0,
+    rerun_on_restart       INTEGER NOT NULL DEFAULT 0, retry_same_day_hours INTEGER NOT NULL DEFAULT 0,
     first_run_min_days    INTEGER NOT NULL DEFAULT 0,
     first_run_max_days    INTEGER NOT NULL DEFAULT 0
   );

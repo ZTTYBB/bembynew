@@ -4,6 +4,114 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.11
+
+失败的任务可在当天按设定间隔自动补运行，模板页的 Emby 备用服务器地址支持填写多个。
+
+A failed job can rerun on the same day at a set interval, and the template form now takes more than one Emby backup server address.
+
+### 中文
+
+**功能与体验**
+
+- **失败后当天补运行** -- 任务与模板新增「失败后当天补运行」开关和「补运行间隔（小时）」，默认关闭，开启后默认 6 小时，可填 1 至 23 的整数。任务运行失败后，当天每隔设定的小时数（另加 0 至 10 分钟随机偏移）再运行一次，直到成功：
+  1. 下一次若会跨过午夜，则改在当天 23:00 至 23:59 随机补运行一次；
+  2. 23:00 之后失败的，当天不再补运行，也不会顺延到次日；
+  3. 勾选了「避开晚高峰」的 Emby 任务，补运行同样避开 20:00 至 23:00；
+  4. 补运行不受任务自身时间窗口限制，从失败的时刻往后推；
+  5. 手动停止的运行不算失败，已停用的任务不会补运行；
+  6. 成功之后恢复原来的执行周期。
+
+  关联模板的任务跟随模板的设置，改模板会同步到所有关联任务。该设置随备份导出与导入、模板复制、模板分享和「提取为模板」一并保留；旧备份中没有此项，导入后按关闭处理。
+- **模板页 Emby 备用地址支持多个** -- 模板里原来只有一个备用地址输入框，现与任务页一致，可添加多个备用地址，按填写顺序依次尝试。已有模板中保存的单个备用地址会自动带出。
+
+### English
+
+**Features & Improvements**
+
+- **Rerun the same day if failed** -- Jobs and templates gain a "Rerun the same day if failed" switch and a "Hours between reruns" field. It is off by default; turning it on starts at 6 hours, and any whole number from 1 to 23 is accepted. After a failed run the job runs again every set number of hours (plus 0 to 10 minutes of random slack) for the rest of the day until one succeeds:
+  1. When the next try would land after midnight, it runs once at a random minute between 23:00 and 23:59 instead;
+  2. A failure after 23:00 is not rerun that day and never carries over to the next;
+  3. Emby jobs set to avoid peak hours also keep reruns out of 20:00 to 23:00;
+  4. A rerun ignores the job's own time window and counts from the moment of the failure;
+  5. A run you stopped by hand does not count as a failure, and a disabled job is not rerun;
+  6. After a success the job returns to its normal cycle.
+
+  A job linked to a template follows the template, and editing the template updates every linked job. The setting is kept by backup export and import, template duplicate, template sharing and "Extract as template"; a backup made before this version has no value for it and imports as off.
+- **Several Emby backup addresses on templates** -- The template form had a single backup address box. It now matches the job form: add as many as you like and they are tried in the order given. A single address already saved in a template is carried over.
+
+---
+
+## v1.0.10
+
+修复小程序在 Cloudflare 验证尚未通过时被误判为完成的问题，并让验证后自动回跳 Telegram 的 `/start` 参数能被正确取到。
+
+Fixes a Mini App being counted as finished before its Cloudflare check had passed, and makes the `/start` parameter of the return-to-Telegram link get picked up correctly.
+
+### 中文
+
+**修复**
+
+- **小程序验证被误判为完成** -- 页面上的文字只要匹配到成功提示，就会被当作验证已通过，即使验证组件还在页面上等待，或者那只是"验证通过后……"这样的说明文字。现在只有在页面没有验证组件、且文字不是"验证通过后"这类说明时，才把成功提示算作完成。
+- **验证后自动回跳的 `/start` 参数取不到** -- 小程序用相对路径（如 `/机器人名?start=xxx`）打开 Telegram 链接时，原来不会被识别。现在相对路径会补全为 `https://t.me/...`，再提取其中的 `start` 或 `startapp` 参数；当页面没有触发桥接事件时，也会从页面里的"返回机器人"按钮或 `t.me` 链接中读取。
+- **异步出现的确认按钮点不到** -- 小程序里"完成验证"之类的按钮常在挑战或请求结束后才渲染。现在点击前会先等待最多 8 秒，优先点真正的控件，等不到才退回按文字做的宽松匹配。
+
+### English
+
+**Fixes**
+
+- **Mini App counted as finished too early** -- Any text on the page that matched a success message was taken as the verification having passed, even with the verification widget still waiting on the page, or when it was only an explanation such as "after verification passes...". A success message now counts only when the page has no verification widget and the text is not that kind of explanation.
+- **Return `/start` parameter not picked up** -- A Mini App that opened its Telegram link with a relative path (such as `/botname?start=xxx`) was not recognised. Relative paths are now completed to `https://t.me/...` before the `start` or `startapp` parameter is read; when the page raises no bridge event, the link is also read from the page's return-to-bot button or any `t.me` link.
+- **Late-rendering confirm button missed** -- Buttons such as "Complete verification" often appear only after the challenge or a request finishes. The click now waits up to 8 seconds for a genuine control first and falls back to a loose text match only if none turns up.
+
+---
+
+## v1.0.9
+
+修复 AI 模型"测试"里的识图探测：改用有效的 JPEG 测试图，模型是否支持识图能被正确判断；一键升级的等待时间由 15 秒延长到 60 秒。
+
+Fixes the vision probe in the AI model test by using a valid JPEG image, so a model's image support is detected correctly, and lets the one-click upgrade wait 60 seconds instead of 15.
+
+### 中文
+
+**修复**
+
+- **识图探测改用有效 JPEG 测试图** -- 原来的探测图是 1×1 的 PNG，部分模型（例如 Grok）会因图片太小或格式不被接受而拒绝，被误判为"不支持识图"。现在使用一张有效的 JPEG 测试图，提示语改为"图中内容是什么？简要回答"，并把回复长度上限降为 30，使测试更快更省。
+- **一键升级等待时间由 15 秒延长到 60 秒** -- 拉取新镜像并重建容器常常超过 15 秒，原来会提前报超时，现在最多等待 60 秒。
+
+### English
+
+**Fixes**
+
+- **Vision probe uses a valid JPEG** -- The old probe sent a 1x1 PNG, which some models (Grok, for one) refused as too small or the wrong kind of image, so they were wrongly reported as text only. It now sends a valid JPEG with the prompt "What is in the image? Answer briefly" and a reply limit of 30 tokens, which is faster and cheaper.
+- **One-click upgrade waits 60 seconds instead of 15** -- Pulling a new image and recreating the container often takes longer than 15 seconds and used to be reported as a timeout; it now waits up to 60.
+
+---
+
+## v1.0.8
+
+AI 服务商可直接从上游拉取模型列表并批量添加，单个模型可一键测试文本与识图能力，识图任务按模型能力排序并在失败时自动换下一个。
+
+AI providers can fetch their model list from upstream and add models in bulk, each model can be tested for text and image support in one click, and image tasks order models by likely vision support and move on to the next when one fails.
+
+### 中文
+
+**功能与体验**
+
+- **从上游获取模型** -- 设置页的 AI 服务商新增「从上游获取模型」：用服务商的接口地址和密钥读取 `/models`，弹窗里可搜索、可多选，名称带 vision、4o、flash、sonnet、vl、image 的模型会标上「Vision」，也可以只看这一类（按名称判断，并不实际探测），点「添加所选模型」一次加入，该服务商下已有的同名模型会自动跳过。密钥处于遮码显示状态时，沿用已保存的密钥。
+- **模型一键测试** -- 每个模型旁新增「测试」：先发一条文本请求，再发一张图片请求。结果显示在模型标签上：延迟毫秒数加一个图标，眼睛表示支持识图，字母图标表示仅文本，调用失败则显示警告图标；鼠标悬停可看到「全功能正常（支持识图）」「仅文本支持（不支持识图）」或具体的错误信息。
+- **识图任务按能力排序并自动换模型** -- 任务需要识图时，名称里带 vision、4o、flash、sonnet、vl、image 的模型排在前面；某个模型调用失败时，自动换下一个候选继续，服务端日志里会记下是哪一个失败、最终换到了哪一个（前缀 `[ai-fallback]`）。指定了具体模型的步骤仍只用该模型。
+
+### English
+
+**Features & Improvements**
+
+- **Fetch models from the provider** -- Each AI provider in Settings gains "Fetch models from provider". It reads `/models` using the provider's address and key; the dialog can be searched and ticked in bulk, models whose names contain vision, 4o, flash, sonnet, vl or image are marked "Vision" and can be shown on their own (judged by name, not probed), and "Add selected models" adds them in one go, skipping any the provider already has. While the key is shown masked, the saved key is used.
+- **One-click model test** -- Each model gets a "Test" button. It sends a text request and then an image request. The result shows on the model's tag as the latency in milliseconds plus an icon: an eye for image support, a letter icon for text only, a warning sign for a failed call. Hover for "Fully functional (vision supported)", "Text only (no vision)" or the error itself.
+- **Image tasks order models by capability and fall back** -- When a task needs to read an image, models whose names contain vision, 4o, flash, sonnet, vl or image go first; if one fails the next candidate is tried, and the server log (prefix `[ai-fallback]`) records which failed and which one it moved to. A step that names a specific model still uses only that model.
+
+---
+
 ## v1.0.7
 
 小程序（Mini App）闭环验证与自动返回补齐、“今日已签”智能识别短路成功、Emby 晚高峰避让与真实心跳抖动、追剧集数保护及执行周期文案优化。

@@ -60,6 +60,7 @@ type TemplateRow = {
   updated_at: string | null;
   run_once: number;
   rerun_on_restart: number;
+  retry_same_day_hours: number;
   exclusive_account: number;
   first_run_min_days: number;
   first_run_max_days: number;
@@ -181,6 +182,7 @@ function rowToTemplate(row: TemplateRow): JobTemplate {
     inferredCategory: inferTemplateCategory({ name: row.name, jobType: row.job_type, config: row.config }),
     runOnce: Boolean(row.run_once),
     rerunOnRestart: Boolean(row.rerun_on_restart),
+    retrySameDayHours: row.retry_same_day_hours ?? 0,
     exclusiveAccount: Boolean(row.exclusive_account),
     firstRunMinDays: row.first_run_min_days ?? 0,
     firstRunMaxDays: row.first_run_max_days ?? 0,
@@ -240,6 +242,7 @@ function syncLinkedJobs(
         run_every_days_max = ?,
         run_once = ?,
         rerun_on_restart = ?,
+        retry_same_day_hours = ?,
         first_run_min_days = ?,
         first_run_max_days = ?,
         exclusive_account = ?
@@ -256,6 +259,7 @@ function syncLinkedJobs(
       t.run_every_days_max ?? null,
       t.run_once ?? 0,
       t.rerun_on_restart ?? 0,
+      t.retry_same_day_hours ?? 0,
       t.first_run_min_days ?? 0,
       t.first_run_max_days ?? 0,
       t.exclusive_account ?? 0,
@@ -286,6 +290,7 @@ function syncLinkedJobs(
         run_every_days_max = ?,
         run_once = ?,
         rerun_on_restart = ?,
+        retry_same_day_hours = ?,
         first_run_min_days = ?,
         first_run_max_days = ?,
         exclusive_account = ?
@@ -303,6 +308,7 @@ function syncLinkedJobs(
       t.run_every_days_max ?? null,
       t.run_once ?? 0,
       t.rerun_on_restart ?? 0,
+      t.retry_same_day_hours ?? 0,
       t.first_run_min_days ?? 0,
       t.first_run_max_days ?? 0,
       t.exclusive_account ?? 0,
@@ -525,8 +531,8 @@ router.post('/', (req, res) => {
   const result = db.prepare(`
     INSERT INTO job_templates
       (name, job_type, bot_username, timezone, reply_timeout_ms, retry_max, config, start_command, checkin_button, run_every_days, run_every_days_max,
-       category, updated_at, run_once, rerun_on_restart, first_run_min_days, first_run_max_days, exclusive_account)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       category, updated_at, run_once, rerun_on_restart, retry_same_day_hours, first_run_min_days, first_run_max_days, exclusive_account)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name,
     jobType ?? 'checkin',
@@ -543,6 +549,7 @@ router.post('/', (req, res) => {
     new Date().toISOString(),
     options.runOnce ? 1 : 0,
     options.rerunOnRestart ? 1 : 0,
+    options.retrySameDayHours,
     options.firstRunMinDays,
     options.firstRunMaxDays,
     exclusiveAccount ? 1 : 0,
@@ -577,8 +584,8 @@ router.post('/:id/duplicate', (req, res) => {
   const result = db.prepare(`
     INSERT INTO job_templates
       (name, job_type, bot_username, timezone, reply_timeout_ms, retry_max, enabled, config, start_command, checkin_button, run_every_days, run_every_days_max,
-       category, updated_at, run_once, rerun_on_restart, first_run_min_days, first_run_max_days, exclusive_account)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       category, updated_at, run_once, rerun_on_restart, retry_same_day_hours, first_run_min_days, first_run_max_days, exclusive_account)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     copyName(source.name),
     source.job_type,
@@ -596,6 +603,7 @@ router.post('/:id/duplicate', (req, res) => {
     new Date().toISOString(),
     source.run_once ?? 0,
     source.rerun_on_restart ?? 0,
+    source.retry_same_day_hours ?? 0,
     source.first_run_min_days ?? 0,
     source.first_run_max_days ?? 0,
     source.exclusive_account ?? 0,
@@ -639,6 +647,7 @@ router.put('/:id', (req, res) => {
     options = normalizeJobOptions(req.body, {
       runOnce: Boolean(existing.run_once),
       rerunOnRestart: Boolean(existing.rerun_on_restart),
+      retrySameDayHours: existing.retry_same_day_hours ?? 0,
       firstRunMinDays: existing.first_run_min_days ?? 0,
       firstRunMaxDays: existing.first_run_max_days ?? 0,
     });
@@ -680,6 +689,7 @@ router.put('/:id', (req, res) => {
     category: category !== undefined ? category.trim() : existing.category ?? '',
     run_once: options.runOnce ? 1 : 0,
     rerun_on_restart: options.rerunOnRestart ? 1 : 0,
+    retry_same_day_hours: options.retrySameDayHours,
     first_run_min_days: options.firstRunMinDays,
     first_run_max_days: options.firstRunMaxDays,
     exclusive_account: exclusiveAccount !== undefined ? (exclusiveAccount ? 1 : 0) : existing.exclusive_account,
@@ -706,6 +716,7 @@ router.put('/:id', (req, res) => {
     updated.category !== (existing.category ?? '') ||
     updated.run_once !== existing.run_once ||
     updated.rerun_on_restart !== existing.rerun_on_restart ||
+    updated.retry_same_day_hours !== existing.retry_same_day_hours ||
     updated.first_run_min_days !== existing.first_run_min_days ||
     updated.first_run_max_days !== existing.first_run_max_days
     || updated.exclusive_account !== existing.exclusive_account
@@ -732,7 +743,7 @@ router.put('/:id', (req, res) => {
       name = ?, job_type = ?, bot_username = ?, timezone = ?,
       reply_timeout_ms = ?, retry_max = ?, enabled = ?,
       config = ?, start_command = ?, checkin_button = ?, run_every_days = ?, run_every_days_max = ?,
-      category = ?, updated_at = ?, run_once = ?, rerun_on_restart = ?, first_run_min_days = ?, first_run_max_days = ?
+      category = ?, updated_at = ?, run_once = ?, rerun_on_restart = ?, retry_same_day_hours = ?, first_run_min_days = ?, first_run_max_days = ?
       , exclusive_account = ?
     WHERE id = ?
   `).run(
@@ -752,6 +763,7 @@ router.put('/:id', (req, res) => {
     updatedAt,
     updated.run_once,
     updated.rerun_on_restart,
+    updated.retry_same_day_hours,
     updated.first_run_min_days,
     updated.first_run_max_days,
     updated.exclusive_account,
@@ -975,8 +987,8 @@ router.post('/:id/create-jobs', (req, res) => {
           schedule_window_start, schedule_window_end, timezone,
           reply_timeout_ms, retry_max, enabled, config,
           start_command, checkin_button, template_id, run_every_days, run_every_days_max,
-          run_once, rerun_on_restart, first_run_min_days, first_run_max_days, exclusive_account
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_once, rerun_on_restart, retry_same_day_hours, first_run_min_days, first_run_max_days, exclusive_account
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         j.name.trim(),
         j.accountId,
@@ -996,6 +1008,7 @@ router.post('/:id/create-jobs', (req, res) => {
         template.run_every_days_max ?? null,
         template.run_once ?? 0,
         template.rerun_on_restart ?? 0,
+        template.retry_same_day_hours ?? 0,
         template.first_run_min_days ?? 0,
         template.first_run_max_days ?? 0,
         template.exclusive_account ?? 0,

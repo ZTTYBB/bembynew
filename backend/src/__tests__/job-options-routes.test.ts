@@ -70,7 +70,7 @@ beforeEach(() => {
     id INTEGER PRIMARY KEY, name TEXT, job_type TEXT DEFAULT 'embywatch', config TEXT,
     run_once INTEGER NOT NULL DEFAULT 0, first_run_min_days INTEGER NOT NULL DEFAULT 0,
     first_run_max_days INTEGER NOT NULL DEFAULT 0,
-    rerun_on_restart INTEGER NOT NULL DEFAULT 0
+    rerun_on_restart INTEGER NOT NULL DEFAULT 0, retry_same_day_hours INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE ai_suppliers (id INTEGER PRIMARY KEY, api_key TEXT);
   CREATE TABLE ai_models (id INTEGER PRIMARY KEY, supplier_id INTEGER, model_id TEXT, label TEXT);`);

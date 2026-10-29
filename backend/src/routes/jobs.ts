@@ -66,6 +66,7 @@ type JobRow = {
   first_run_min_days: number;
   first_run_max_days: number;
   rerun_on_restart: number;
+  retry_same_day_hours: number;
   exclusive_account: number;
   retired: string | null;
   last_success_at: string | null;
@@ -227,6 +228,7 @@ function rowToJob(row: JobRow): Job & { accountName?: string } {
     firstRunMinDays: row.first_run_min_days ?? 0,
     firstRunMaxDays: row.first_run_max_days ?? 0,
     rerunOnRestart: Boolean(row.rerun_on_restart),
+    retrySameDayHours: row.retry_same_day_hours ?? 0,
     exclusiveAccount: Boolean(row.exclusive_account),
     retired: row.retired ?? null,
     lastSuccessAt: row.last_success_at ?? null,
@@ -254,6 +256,7 @@ function selectedTemplateOptions(templateId: number | null) {
     "SELECT * FROM job_templates WHERE id = ?",
   ).get(templateId) as {
     run_once: number; first_run_min_days: number; first_run_max_days: number; rerun_on_restart: number;
+    retry_same_day_hours: number;
     exclusive_account: number;
   } | undefined;
   if (!template) throw new Error("Template not found");
@@ -261,6 +264,7 @@ function selectedTemplateOptions(templateId: number | null) {
     runOnce: Boolean(template.run_once), firstRunMinDays: template.first_run_min_days ?? 0,
     firstRunMaxDays: template.first_run_max_days ?? 0,
     rerunOnRestart: Boolean(template.rerun_on_restart),
+    retrySameDayHours: template.retry_same_day_hours ?? 0,
     exclusiveAccount: Boolean(template.exclusive_account),
   };
 }
@@ -552,8 +556,8 @@ router.post("/", (req, res) => {
     INSERT INTO jobs
       (name, account_id, job_type, bot_username, schedule_window_start, schedule_window_end,
        timezone, reply_timeout_ms, retry_max, enabled, config, start_command, checkin_button, template_id, run_every_days, run_every_days_max, updated_at,
-       run_once, first_run_min_days, first_run_max_days, rerun_on_restart, exclusive_account)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       run_once, first_run_min_days, first_run_max_days, rerun_on_restart, retry_same_day_hours, exclusive_account)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     )
     .run(
@@ -578,6 +582,7 @@ router.post("/", (req, res) => {
       options.firstRunMinDays,
       options.firstRunMaxDays,
       options.rerunOnRestart ? 1 : 0,
+      options.retrySameDayHours,
       exclusiveAccount ? 1 : 0,
     );
 
@@ -732,6 +737,7 @@ router.put("/:id", (req, res) => {
       firstRunMinDays: existing.first_run_min_days ?? 0,
       firstRunMaxDays: existing.first_run_max_days ?? 0,
       rerunOnRestart: Boolean(existing.rerun_on_restart),
+      retrySameDayHours: existing.retry_same_day_hours ?? 0,
       exclusiveAccount: Boolean(existing.exclusive_account),
     });
     exclusiveAccount = inherited
@@ -754,7 +760,8 @@ router.put("/:id", (req, res) => {
       schedule_window_start = ?, schedule_window_end = ?, timezone = ?,
       reply_timeout_ms = ?, retry_max = ?, enabled = ?, config = ?,
       start_command = ?, checkin_button = ?, template_id = ?, run_every_days = ?, run_every_days_max = ?,
-      updated_at = ?, run_once = ?, first_run_min_days = ?, first_run_max_days = ?, rerun_on_restart = ?, exclusive_account = ?
+      updated_at = ?, run_once = ?, first_run_min_days = ?, first_run_max_days = ?, rerun_on_restart = ?,
+      retry_same_day_hours = ?, exclusive_account = ?
     WHERE id = ?
   `,
   ).run(
@@ -779,6 +786,7 @@ router.put("/:id", (req, res) => {
     options.firstRunMinDays,
     options.firstRunMaxDays,
     options.rerunOnRestart ? 1 : 0,
+    options.retrySameDayHours,
     exclusiveAccount ? 1 : 0,
     req.params.id,
   );

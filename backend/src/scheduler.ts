@@ -14,7 +14,7 @@ import {
   onExecutionFinished,
   getExecutionStatus,
 } from "./jobs/execution";
-import { toMinutes, pickNextRun } from "./scheduler-utils";
+import { toMinutes, pickNextRun, pickSameDayRetry } from "./scheduler-utils";
 import { JobScheduleStore, scheduleInstant, type JobSchedule } from "./db/jobSchedules";
 import { JobRecoveryStore } from "./db/jobRecovery";
 import { removeLogShots, sweepOrphanedLogShots, startLogShotMigration } from "./jobs/logShots";
@@ -217,6 +217,42 @@ function hasAttempted(jobId: number): boolean {
     db.prepare("SELECT 1 FROM job_logs WHERE job_id = ? LIMIT 1").get(jobId) !== undefined;
 }
 
+/**
+ * When to run this job again today because its last scheduled run failed, or
+ * null when it should follow the normal schedule.
+ *
+ * Reads the latest finished log rather than trusting the caller, so every path
+ * that reschedules after a run (live dispatch, restart recovery) agrees. A run
+ * the user stopped is logged as failed with the message "Cancelled"; that is
+ * not a failure to retry.
+ */
+function sameDayRetryAt(job: Job): DateTime | null {
+  const hours = job.retrySameDayHours ?? 0;
+  if (hours <= 0 || !job.enabled) return null;
+  const latest = db.prepare(`
+    SELECT ran_at, status, message FROM job_logs
+    WHERE job_id = ? AND status IN ('success', 'failed')
+    ORDER BY julianday(ran_at) DESC, id DESC LIMIT 1
+  `).get(job.id) as { ran_at: string; status: string; message: string | null } | undefined;
+  if (!latest || latest.status !== "failed" || latest.message === "Cancelled") return null;
+
+  const timezone = resolveJobTimezone(job.timezone);
+  let ranAt = DateTime.fromISO(latest.ran_at, { zone: "utc" });
+  if (!ranAt.isValid) ranAt = DateTime.fromSQL(latest.ran_at, { zone: "utc" });
+  const now = DateTime.now().setZone(timezone);
+  // A run that failed yesterday has no business being retried today.
+  if (!ranAt.isValid || ranAt.setZone(timezone).toISODate() !== now.toISODate()) return null;
+
+  let avoidPeakHours = false;
+  if (job.jobType === "embywatch" && job.config) {
+    try {
+      const parsed = typeof job.config === "string" ? JSON.parse(job.config) : job.config;
+      avoidPeakHours = Boolean(parsed.avoidPeakHours);
+    } catch {}
+  }
+  return pickSameDayRetry(now, hours, { avoidPeakHours });
+}
+
 function firstRunDays(job: Job): number {
   const lo = Math.max(0, Math.min(3650, Math.floor(job.firstRunMinDays ?? 0)));
   const hi = Math.max(lo, Math.min(3650, Math.floor(job.firstRunMaxDays ?? lo)));
@@ -305,6 +341,7 @@ export function loadEligibleJobs(): Array<{
       runEveryDaysMax: row.run_every_days_max ?? null,
       runOnce: Boolean(row.run_once),
       rerunOnRestart: Boolean(row.rerun_on_restart),
+      retrySameDayHours: row.retry_same_day_hours ?? 0,
       firstRunMinDays: row.first_run_min_days ?? 0,
       firstRunMaxDays: row.first_run_max_days ?? 0,
       lastAttemptAt: row.last_attempt_at ?? null,
@@ -397,9 +434,11 @@ function scheduleAfterRun(jobId: number, expectedRevision?: number): void {
     schedule.delete(jobId);
     return;
   }
+  // A failed run may be retried later today instead of waiting for its next day.
+  const retryAt = sameDayRetryAt(job);
   const plan = scheduleOne(job, eligible?.account ?? null,
     job.runOnce ? 1 : resolveRunEveryDays(job.id, job.runEveryDays ?? 1, job.runEveryDaysMax),
-    false, { expectedRevision, arm: !!eligible });
+    false, { expectedRevision, arm: !!eligible, ...(retryAt ? { fixedNextRun: retryAt } : {}) });
   if (plan && !eligible) {
     const entry = schedule.get(jobId);
     if (entry?.timer) clearTimeout(entry.timer);
@@ -476,7 +515,7 @@ function scheduleOne(
   account: TgAccount | null,
   daysAhead = 0,
   catchUp = false,
-  options: { expectedRevision?: number; arm?: boolean } = {},
+  options: { expectedRevision?: number; arm?: boolean; fixedNextRun?: DateTime } = {},
 ): JobSchedule | undefined {
   // Stagger away from every other job's slot so runs don't pile into the
   // same minute (issue #10)
@@ -493,7 +532,8 @@ function scheduleOne(
   }
 
   const timezone = resolveJobTimezone(job.timezone);
-  const nextRun = pickNextRun(
+  // A same-day retry names its own moment and ignores the job's window.
+  const nextRun = options.fixedNextRun ?? pickNextRun(
     job.scheduleWindowStart,
     job.scheduleWindowEnd,
     timezone,

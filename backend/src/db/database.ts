@@ -475,6 +475,10 @@ for (const table of ["jobs", "job_templates"]) {
   if (!columns.has("exclusive_account")) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN exclusive_account INTEGER NOT NULL DEFAULT 0`);
   }
+  // Hours between same-day retries after a failed run; 0 = off.
+  if (!columns.has("retry_same_day_hours")) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN retry_same_day_hours INTEGER NOT NULL DEFAULT 0`);
+  }
 }
 if (!(db.prepare("PRAGMA table_info(job_templates)").all() as Array<{ name: string }>)
   .some((column) => column.name === "category")) {

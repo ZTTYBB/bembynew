@@ -49,7 +49,7 @@ const schema = `
     run_every_days INTEGER NOT NULL DEFAULT 1, run_every_days_max INTEGER,
     run_once INTEGER NOT NULL DEFAULT 0, first_run_min_days INTEGER NOT NULL DEFAULT 0,
     first_run_max_days INTEGER NOT NULL DEFAULT 0, category TEXT NOT NULL DEFAULT '',
-    rerun_on_restart INTEGER NOT NULL DEFAULT 0,
+    rerun_on_restart INTEGER NOT NULL DEFAULT 0, retry_same_day_hours INTEGER NOT NULL DEFAULT 0,
     exclusive_account INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE jobs (
@@ -61,7 +61,7 @@ const schema = `
     run_every_days INTEGER NOT NULL DEFAULT 1, run_every_days_max INTEGER,
     last_success_at TEXT, last_attempt_at TEXT, retired TEXT,
     run_once INTEGER NOT NULL DEFAULT 0, first_run_min_days INTEGER NOT NULL DEFAULT 0,
-    first_run_max_days INTEGER NOT NULL DEFAULT 0, rerun_on_restart INTEGER NOT NULL DEFAULT 0,
+    first_run_max_days INTEGER NOT NULL DEFAULT 0, rerun_on_restart INTEGER NOT NULL DEFAULT 0, retry_same_day_hours INTEGER NOT NULL DEFAULT 0,
     exclusive_account INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE ai_suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, base_url TEXT, api_key TEXT, timeout_ms INTEGER);

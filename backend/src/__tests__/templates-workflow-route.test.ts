@@ -25,7 +25,7 @@ const SCHEMA = `
     run_every_days INTEGER DEFAULT 1, run_every_days_max INTEGER,
     category TEXT NOT NULL DEFAULT '', run_once INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT,
-    rerun_on_restart INTEGER NOT NULL DEFAULT 0,
+    rerun_on_restart INTEGER NOT NULL DEFAULT 0, retry_same_day_hours INTEGER NOT NULL DEFAULT 0,
     first_run_min_days INTEGER NOT NULL DEFAULT 0, first_run_max_days INTEGER NOT NULL DEFAULT 0,
     exclusive_account INTEGER NOT NULL DEFAULT 0
   );
@@ -38,7 +38,7 @@ const SCHEMA = `
     start_command TEXT DEFAULT '/start', checkin_button TEXT DEFAULT 'checkin',
     template_id INTEGER REFERENCES job_templates(id) ON DELETE SET NULL,
     run_every_days INTEGER DEFAULT 1, run_every_days_max INTEGER,
-    run_once INTEGER NOT NULL DEFAULT 0, rerun_on_restart INTEGER NOT NULL DEFAULT 0,
+    run_once INTEGER NOT NULL DEFAULT 0, rerun_on_restart INTEGER NOT NULL DEFAULT 0, retry_same_day_hours INTEGER NOT NULL DEFAULT 0,
     first_run_min_days INTEGER NOT NULL DEFAULT 0,
     first_run_max_days INTEGER NOT NULL DEFAULT 0, retired TEXT, last_success_at TEXT,
     exclusive_account INTEGER NOT NULL DEFAULT 0

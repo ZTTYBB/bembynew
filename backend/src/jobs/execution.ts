@@ -136,6 +136,7 @@ export function readExecutionJob(jobId: number): Job | undefined {
     runEveryDaysMax: row.run_every_days_max ?? null,
     runOnce: Boolean(row.run_once),
     rerunOnRestart: Boolean(row.rerun_on_restart),
+    retrySameDayHours: row.retry_same_day_hours ?? 0,
     firstRunMinDays: row.first_run_min_days ?? 0,
     firstRunMaxDays: row.first_run_max_days ?? 0,
     retired: row.retired ?? null,

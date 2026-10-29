@@ -65,10 +65,13 @@ describe("one-time job options", () => {
   it("preserves old recurring defaults and partial updates", () => {
     expect(normalizeJobOptions({})).toEqual({
       runOnce: false, firstRunMinDays: 0, firstRunMaxDays: 0, rerunOnRestart: false,
+      retrySameDayHours: 0,
     });
     expect(normalizeJobOptions({ firstRunMaxDays: 5 }, {
       runOnce: true, firstRunMinDays: 2, firstRunMaxDays: 4,
-    })).toEqual({ runOnce: true, firstRunMinDays: 2, firstRunMaxDays: 5, rerunOnRestart: false });
+    })).toEqual({
+      runOnce: true, firstRunMinDays: 2, firstRunMaxDays: 5, rerunOnRestart: false, retrySameDayHours: 0,
+    });
   });
   it.each([
     { runOnce: "false" }, { firstRunMinDays: -1 }, { firstRunMaxDays: 3651 },

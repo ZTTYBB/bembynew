@@ -1225,6 +1225,17 @@
           </label>
           <p style="font-size:12px;color:#777;margin:4px 0">{{ t('jobOptions.exclusiveAccountHint') }}</p>
         </div>
+        <div class="form-group">
+          <label class="form-checkbox-label">
+            <input type="checkbox" :checked="form.retrySameDayHours > 0" :disabled="!!form.templateId" @change="form.retrySameDayHours = ($event.target as HTMLInputElement).checked ? 6 : 0" />
+            {{ t('jobOptions.retrySameDay') }}
+          </label>
+          <div v-if="form.retrySameDayHours > 0" style="margin-top:6px">
+            <label class="form-label" for="job-retry-hours">{{ t('jobOptions.retrySameDayHours') }}</label>
+            <input id="job-retry-hours" v-model.number="form.retrySameDayHours" class="form-input" type="number" min="1" max="23" step="1" :disabled="!!form.templateId" style="max-width:120px" />
+          </div>
+          <p style="font-size:12px;color:#777;margin:4px 0">{{ t('jobOptions.retrySameDayHint') }}</p>
+        </div>
         <div v-if="form.runOnce" class="form-row">
           <div class="form-group">
             <label class="form-label" for="job-first-min">{{ t('jobOptions.firstRunMinDays') }}</label>
@@ -1675,6 +1686,7 @@ const form = reactive({
   firstRunMinDays: 0,
   firstRunMaxDays: 0,
   rerunOnRestart: false,
+  retrySameDayHours: 0,
   exclusiveAccount: false,
 });
 
@@ -1892,6 +1904,7 @@ function onJobTypeChange() {
   form.firstRunMinDays = 0;
   form.firstRunMaxDays = 0;
   form.rerunOnRestart = false;
+  form.retrySameDayHours = 0;
   form.exclusiveAccount = false;
   runEveryDaysText.value = '1';
   customActions.value = [];
@@ -1975,6 +1988,7 @@ function applyTemplate(tpl: JobTemplate) {
   form.firstRunMinDays = tpl.firstRunMinDays ?? 0;
   form.firstRunMaxDays = tpl.firstRunMaxDays ?? 0;
   form.rerunOnRestart = tpl.rerunOnRestart ?? false;
+  form.retrySameDayHours = tpl.retrySameDayHours ?? 0;
   form.exclusiveAccount = tpl.exclusiveAccount ?? false;
   setCmdState(tpl.startCommand === '/start' ? '' : (tpl.startCommand ?? ''));
   setBtnState(tpl.checkinButton === '签到' ? '' : (tpl.checkinButton ?? ''));
@@ -2228,6 +2242,7 @@ function openAdd() {
     firstRunMinDays: 0,
     firstRunMaxDays: 0,
     rerunOnRestart: false,
+    retrySameDayHours: 0,
     exclusiveAccount: false,
   });
   runEveryDaysText.value = '1';
@@ -2262,6 +2277,7 @@ function openEdit(j: Job) {
     firstRunMinDays: j.firstRunMinDays ?? 0,
     firstRunMaxDays: j.firstRunMaxDays ?? 0,
     rerunOnRestart: j.rerunOnRestart ?? false,
+    retrySameDayHours: j.retrySameDayHours ?? 0,
     exclusiveAccount: j.exclusiveAccount ?? false,
   });
   runEveryDaysText.value = formatRunEvery(j.runEveryDays ?? 1, j.runEveryDaysMax);
@@ -2758,6 +2774,9 @@ async function saveJob() {
       }
     }
   }
+  if (!form.templateId && !(Number.isInteger(form.retrySameDayHours) && form.retrySameDayHours >= 0 && form.retrySameDayHours <= 23)) {
+    formError.value = t('jobOptions.invalidRetryHours'); return;
+  }
   if (form.jobType === 'autoreg' && !form.templateId) {
     if (!form.botUsername) { formError.value = t('jobs.errors.botRequired'); return; }
     if (!autoregCfg.groupId) { formError.value = t('jobs.errors.autoregGroupRequired'); return; }
@@ -2864,6 +2883,7 @@ async function confirmExtract() {
       firstRunMinDays: job.firstRunMinDays,
       firstRunMaxDays: job.firstRunMaxDays,
       rerunOnRestart: job.rerunOnRestart,
+      retrySameDayHours: job.retrySameDayHours,
       exclusiveAccount: job.exclusiveAccount,
     });
     await jobsApi.update(job.id, { templateId: tpl.id });

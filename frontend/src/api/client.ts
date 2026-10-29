@@ -754,6 +754,8 @@ export type Job = {
   firstRunMinDays?: number;
   firstRunMaxDays?: number;
   rerunOnRestart?: boolean;
+  /** Hours between same-day retries after a failed run; 0 is off. */
+  retrySameDayHours?: number;
   exclusiveAccount?: boolean;
   retired?: string | null;
   /** ISO timestamp of the last successful run; null when it has never succeeded */
@@ -782,6 +784,8 @@ export type JobTemplate = {
   firstRunMinDays?: number;
   firstRunMaxDays?: number;
   rerunOnRestart?: boolean;
+  /** Hours between same-day retries after a failed run; 0 is off. */
+  retrySameDayHours?: number;
   exclusiveAccount?: boolean;
   category?: string;
   inferredCategory?: string;
@@ -1730,6 +1734,7 @@ export type ExportPayload = {
     firstRunMinDays?: number;
     firstRunMaxDays?: number;
     rerunOnRestart?: boolean;
+    retrySameDayHours?: number;
     exclusiveAccount?: boolean;
     category?: string;
   }>;
@@ -1754,6 +1759,7 @@ export type ExportPayload = {
     firstRunMinDays?: number;
     firstRunMaxDays?: number;
     rerunOnRestart?: boolean;
+    retrySameDayHours?: number;
     exclusiveAccount?: boolean;
     lastSuccessAt?: string | null;
     lastAttemptAt?: string | null;

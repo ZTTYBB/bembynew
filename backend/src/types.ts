@@ -65,6 +65,11 @@ export type Job = {
   runOnce?: boolean;
   /** Re-run an interrupted execution after a server restart when explicitly enabled. */
   rerunOnRestart?: boolean;
+  /**
+   * After a failed run, run again every this many hours for the rest of the day
+   * until one succeeds. 0 (the default) leaves a failure to the normal schedule.
+   */
+  retrySameDayHours?: number;
   /** Prevent other jobs linked to the same account from running concurrently. */
   exclusiveAccount?: boolean;
   /** Inclusive offsets from today for the first one-time plan. */
@@ -99,6 +104,8 @@ export type JobTemplate = {
   runOnce?: boolean;
   /** Re-run interrupted template-linked executions after a server restart. */
   rerunOnRestart?: boolean;
+  /** Same-day retry interval in hours for linked jobs; 0 is off. */
+  retrySameDayHours?: number;
   /** Prevent other jobs linked to the same account from running concurrently. */
   exclusiveAccount?: boolean;
   firstRunMinDays?: number;
