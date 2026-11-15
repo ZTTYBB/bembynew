@@ -86,7 +86,7 @@ import {
   type MiniAppHttpAction,
 } from "./miniAppHttp";
 
-function parseTgReturnLink(link: string): { bot?: string; startCmd: string } | null {
+export function parseTgReturnLink(link: string): { bot?: string; startCmd: string } | null {
   try {
     let clean = link.trim();
     if (/^\/[a-zA-Z0-9_]+\?/i.test(clean)) {

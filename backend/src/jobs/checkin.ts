@@ -15,6 +15,7 @@ import {
   type CfRunState,
 } from './cloudflare';
 import { openableButtonUrl, webButtonOf, type WebButton } from '../tg/miniApp';
+import { parseTgReturnLink } from './custom';
 import { escapeHtml, safeHref } from '../tg/htmlEscape';
 import { cfProxyCandidatesFor, rememberCfProxy } from '../tg/proxyProviders';
 import { CONNECT_TIMEOUT_MS, settleQuietly, withTimeout } from '../util/timeout';
@@ -1082,8 +1083,8 @@ export async function runCheckin(
   };
 
   // Opens a checkin page in the installed browser, passing any Cloudflare challenge.
-  // Returns the page text for success/fail matching.
-  const openCheckinPage = async (url: string): Promise<string> => {
+  // Returns the page text and any return link for success/fail matching and completion.
+  const openCheckinPage = async (url: string): Promise<{ text: string; returnTgLink?: string }> => {
     if (!cfChallenge) {
       throw new Error(
         'Checkin requires opening a Cloudflare-protected page ("I am not a bot"). Enable "Solve Cloudflare challenge" for this job.',
@@ -1119,7 +1120,7 @@ export async function runCheckin(
     if (result.ok && result.proxyId) rememberCfProxy(result.finalHost, result.proxyId);
     if (!result.ok)
       throw new Error(result.reason ?? cfFailureFallback(result.challenged, log.cfMiniApp));
-    return result.text;
+    return { text: result.text, returnTgLink: result.returnTgLink };
   };
 
   const assertOutcome = (...texts: string[]): void => {
@@ -1165,8 +1166,29 @@ export async function runCheckin(
         if (standing) {
           log.cfFromHistory = true;
           log.buttonClicked = standing.web.text;
-          const cfText = await openCheckinPage(await toOpenableUrl(standing.web, standing.msg));
-          assertOutcome(cfText);
+          const cfRes = await openCheckinPage(await toOpenableUrl(standing.web, standing.msg));
+          let returnReplyText = '';
+          if (cfRes.returnTgLink) {
+            const returnParsed = parseTgReturnLink(cfRes.returnTgLink);
+            if (returnParsed) {
+              const returnTarget = returnParsed.bot || botUsername;
+              console.log(`[checkin] Mini App return link detected, auto-sending ${returnParsed.startCmd} to ${returnTarget}`);
+              try {
+                const returnReplyPromise = waitForBotReply(client, returnTarget, replyTimeoutMs, signal);
+                await client.sendMessage(returnTarget, { message: returnParsed.startCmd });
+                const returnMsgs = await returnReplyPromise;
+                if (returnMsgs.length) {
+                  returnReplyText = htmlToText((await parseMessages(returnMsgs, client, signal)).html || '');
+                }
+              } catch (err: any) {
+                console.warn(`[checkin] Mini App return auto-completion warning: ${err?.message ?? err}`);
+              }
+            }
+          }
+          if (!returnReplyText) {
+            returnReplyText = await reclickCheckinButton(client, botUsername, log.buttonClicked ?? checkinButton, replyTimeoutMs, signal);
+          }
+          assertOutcome(cfRes.text, returnReplyText);
           log.totalMs = Date.now() - attemptStart;
           return log;
         }
@@ -1431,9 +1453,32 @@ export async function runCheckin(
     let cfPageText = '';
     let reclickText = '';
     if (urlToOpen) {
-      cfPageText = await openCheckinPage(urlToOpen);
-      // Verify pages only unlock the checkin; re-click the button to register it.
-      reclickText = await reclickCheckinButton(client, botUsername, log.buttonClicked ?? checkinButton, replyTimeoutMs, signal);
+      const cfRes = await openCheckinPage(urlToOpen);
+      cfPageText = cfRes.text;
+
+      // If the Mini App emitted a Telegram return link (e.g. /start <param>), send it to complete verification
+      if (cfRes.returnTgLink) {
+        const returnParsed = parseTgReturnLink(cfRes.returnTgLink);
+        if (returnParsed) {
+          const returnTarget = returnParsed.bot || botUsername;
+          console.log(`[checkin] Mini App return link detected, auto-sending ${returnParsed.startCmd} to ${returnTarget}`);
+          try {
+            const returnReplyPromise = waitForBotReply(client, returnTarget, replyTimeoutMs, signal);
+            await client.sendMessage(returnTarget, { message: returnParsed.startCmd });
+            const returnMsgs = await returnReplyPromise;
+            if (returnMsgs.length) {
+              reclickText = htmlToText((await parseMessages(returnMsgs, client, signal)).html || '');
+            }
+          } catch (err: any) {
+            console.warn(`[checkin] Mini App return auto-completion warning: ${err?.message ?? err}`);
+          }
+        }
+      }
+
+      if (!reclickText) {
+        // Verify pages only unlock the checkin; re-click the button to register it.
+        reclickText = await reclickCheckinButton(client, botUsername, log.buttonClicked ?? checkinButton, replyTimeoutMs, signal);
+      }
     }
 
     // Check success/fail text in callback answer, button response, CF page, or re-click

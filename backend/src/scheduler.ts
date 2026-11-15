@@ -610,6 +610,19 @@ function refreshJobs(): void {
       continue;
     }
     if (persisted) {
+      // If a job has been stuck in 'dispatching' for over 15 minutes and is no longer actively running,
+      // recover it to interrupted state so it can be rescheduled rather than blocking forever.
+      if (persisted.state === "dispatching") {
+        const active = getExecutionStatus().running.some((r) => r.jobId === job.id);
+        const ageMs = Date.now() - new Date(persisted.updatedAt).getTime();
+        if (!active && (isNaN(ageMs) || ageMs > 15 * 60 * 1000)) {
+          console.warn(`[scheduler] Job ${job.id} (${job.name}) was stuck in dispatching state since ${persisted.updatedAt}; resetting to interrupted`);
+          const recovered = scheduleStore().save({ ...persisted, state: "interrupted" }, persisted.revision);
+          if (recovered) attachPlan(job, account, recovered);
+          continue;
+        }
+      }
+
       const changed = persisted.scheduleKey !== buildScheduleKey(job, resolvedTz);
       if (persisted.state === "pending" && changed && !persisted.pinned && persisted.origin === "auto") {
         const { daysAhead, catchUp } = planRun(job, resolvedTz);

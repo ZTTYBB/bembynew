@@ -4,6 +4,30 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.12
+
+修复小程序验证页（如 embyguard.com）将说明文字误判为签到控件导致打卡失败的问题，签到任务支持小程序返回链接自动回传闭环，修复超时狗导致的调度队列死锁并增加僵尸任务自动恢复机制。
+
+Fixes Mini App verification portals (such as embyguard.com) mistaking instructional text for checkin buttons, adds Telegram return-link support to checkin tasks, fixes a watchdog promise leak that stalled the execution queue, and auto-recovers orphaned dispatching schedules.
+
+### 中文
+
+**修复与体验**
+
+- **小程序验证页控件误判修复** -- 部分签到机器人（如月饼 Moonkkbot 等）会弹出基于 Cloudflare Turnstile 的验证小程序（如 `embyguard.com`）。页面上的说明文字（如“验证当前请求，完成后按提示返回机器人继续操作。”）因包含“完成”二字，被误当作签到按钮进行模拟点击，因纯文本无响应而报错阻断整个打卡流程。现精确排除说明提示语，并在未配置小程序内点击动作时，过完验证直接视为通过，不再强行要求点击不存在的内嵌签到按钮。
+- **签到任务支持小程序返回链接（Return Link）** -- 签到任务现与自定义任务对齐：当验证通过后小程序触发带 `/start` 参数的返回链接（`returnTgLink`）时，系统自动向目标机器人回传启动指令以完成闭环；未携带返回链接时平滑回退至重点击签到按钮。
+- **超时狗清理死锁与僵尸调度状态恢复** -- 当任务因超时狗（Watchdog）强行终止时，`finally` 块中等待卡死 Promise 的逻辑现在限制最长等待 5 秒，彻底杜绝任务槽被永久占用的死锁；同时调度器（Scheduler）在每轮扫描时自动检测并恢复超过 15 分钟未释放的 `dispatching` 僵尸状态任务。
+
+### English
+
+**Fixes & Improvements**
+
+- **Mini App verification portal control misdetection fix** -- Certain checkin bots (like Moonkkbot) pop up a Cloudflare Turnstile verification Mini App (e.g. `embyguard.com`). Informational text (e.g. "Verify current request, after completion return to bot...") was previously matched as an in-app button due to the word "完成", causing simulated clicks on plain text to fail the entire checkin. The parser now excludes instructional phrasing, and when no in-app clicks are specified, solving the verification portal is cleanly accepted.
+- **Telegram return link support for checkin tasks** -- Standard checkin tasks now handle Mini App Telegram return links (`returnTgLink`): if passing the portal emits a `/start <param>` deep link, it is automatically forwarded to the bot to finalize the verification; otherwise it falls back to re-clicking the checkin button.
+- **Watchdog cleanup deadlock fix & zombie schedule recovery** -- If a task exceeds its watchdog timeout, the cleanup wait in `finally` is capped at 5 seconds, preventing permanently wedged background promises from freezing the queue. The scheduler also periodically detects and auto-recovers orphaned `dispatching` job schedules older than 15 minutes.
+
+---
+
 ## v1.0.11
 
 失败的任务可在当天按设定间隔自动补运行，模板页的 Emby 备用服务器地址支持填写多个。

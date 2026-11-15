@@ -334,8 +334,13 @@ async function perform(entry: Entry): Promise<ExecutionResult> {
     if (job && !cancelled) notify("failed", job, account, message);
   } finally {
     if (watchdog) clearTimeout(watchdog);
-    // The caller's queue also waits here: a timeout is not proof that work stopped.
-    if (run) await run.catch(() => {});
+    // Bounded cleanup wait: a wedged run must not block the queue and scheduler slot forever
+    if (run) {
+      await Promise.race([
+        run.catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
     detachTermination?.();
     if (entry.logId != null) {
       unregisterJob(entry.logId);

@@ -898,9 +898,13 @@ const WEBVIEW_PROXY_SHIM = `
 // Labels that clearly mean "check in", and the states that mean it is already done.
 // Broadened to include verification completion buttons for Mini App checkin flows.
 const IN_APP_LABEL_RE =
-  /签到|簽到|打卡|领取|領取|完成验证|完成驗證|提交验证|立即验证|确认验证|完成签到|完成|confirm\s?verification|complete\s?verification|verify|check\s?-?in|sign\s?-?in/i;
+  /签到|簽到|打卡|领取|領取|完成验证|完成驗證|提交验证|立即验证|确认验证|完成签到|(?:^|\s)完成(?:$|\s)|confirm\s?verification|complete\s?verification|verify|check\s?-?in|sign\s?-?in/i;
 const IN_APP_DONE_RE =
   /已签到|已簽到|已打卡|已领取|已領取|已完成|今日已签|今日已打卡|already/i;
+
+// Descriptive instruction phrases that should never be mistaken for interactive checkin buttons
+const IN_APP_INSTRUCTION_RE =
+  /(?:按提示|提示返回|返回机器人|返回機器人|完成后|完成後|通过后|通過後|请完成|請完成)/i;
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1063,9 +1067,10 @@ async function findInAppCheckin(
         const RANK = ["control", "pointer", "in-card", "text"];
         let best: { el: Element; kind: string; fallback: string } | null = null;
 
+        const instructionRe = /(?:按提示|提示返回|返回机器人|返回機器人|完成后|完成後|通过后|通過後|请完成|請完成)/i;
         for (const el of Array.from(document.querySelectorAll("*"))) {
           const text = (fn.ownText(el) || (el as HTMLInputElement).value || "").trim();
-          if (!text || text.length > 30 || !label.test(text)) continue;
+          if (!text || text.length > 30 || !label.test(text) || instructionRe.test(text)) continue;
           if (!fn.visible(el)) continue;
 
           for (const cand of fn.candidatesFor(el)) {
@@ -1556,15 +1561,19 @@ async function runInAppClicks(
       click = await clickInAppControl(page, step);
     }
     if (!click) {
-      // A label that never appears is worth reporting: the app may have changed
-      if (step) done.push(`"${step}" not found`);
-      const alts = step ? parseLabelAlternatives(step) : [];
-      failure =
-        alts.length > 1
-          ? `none of ${alts.map((a) => `"${a}"`).join(", ")} are on the app page`
-          : step
-            ? `"${step}" is not on the app page`
-            : "no checkin control was found in the app";
+      // When a specific step was requested and not found, report it
+      if (step) {
+        done.push(`"${step}" not found`);
+        const alts = parseLabelAlternatives(step);
+        failure =
+          alts.length > 1
+            ? `none of ${alts.map((a) => `"${a}"`).join(", ")} are on the app page`
+            : `"${step}" is not on the app page`;
+        break;
+      }
+      // When no step was explicitly configured, finding no in-app button is normal
+      // for verify portals (where solving Cloudflare Turnstile completes the check)
+      done.push("no in-app button needed");
       break;
     }
     done.push(click.outcome);
@@ -1576,10 +1585,15 @@ async function runInAppClicks(
     if (click.weak) {
       const after = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
       if (after === before) {
-        failure =
-          `pressed "${click.outcome}" but it is not a control and the app did not react` +
-          " -- name the control exactly, or give a CSS selector (css:...)";
-        break;
+        if (step) {
+          failure =
+            `pressed "${click.outcome}" but it is not a control and the app did not react` +
+            " -- name the control exactly, or give a CSS selector (css:...)";
+          break;
+        }
+        // When no step was requested, ignore an unreactive heuristic click on plain text
+        done.pop();
+        done.push(`${click.outcome} (inert text, ignored)`);
       }
     }
     if (click.done) break;
