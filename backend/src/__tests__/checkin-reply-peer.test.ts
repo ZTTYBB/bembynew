@@ -11,7 +11,7 @@ vi.mock("../db/database", () => ({
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { Api, type TelegramClient } from "telegram";
-import { waitForBotReply } from "../jobs/checkin";
+import { waitForBotReply, matchesDirectCheckinText, DIRECT_CHECKIN_SUCCESS_RE } from "../jobs/checkin";
 
 const BOT_PEER_ID = "12345";
 const OTHER_PEER_ID = "99999";
@@ -186,5 +186,123 @@ describe("waitForBotReply only accepts messages that arrive now", () => {
 
     emit(messageFrom(BOT_PEER_ID, true));
     await expect(p).resolves.toHaveLength(1);
+  });
+});
+
+describe("waitForBotReply ReplyKeyboardMarkup & earlyTextMatch", () => {
+  it("ignores ReplyKeyboardMarkup until ReplyInlineMarkup arrives", async () => {
+    vi.useFakeTimers();
+    const { client, emit } = fakeClient();
+    const p = waitForBotReply(client, "SomeBot", 10_000, undefined, BOT_PEER_ID);
+
+    // Simulates Msg 1 from 天启开户: "✅ 正在签到,请稍后..." with a persistent reply keyboard
+    emit({
+      id: 10,
+      peerId: new Api.PeerUser({ userId: BOT_PEER_ID as unknown as never }),
+      message: "✅ 正在签到,请稍后...",
+      replyMarkup: new Api.ReplyKeyboardMarkup({ rows: [] }),
+    });
+    let settled = false;
+    void p.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    // Msg 2 arrives 1s later with the real inline markup + result
+    await vi.advanceTimersByTimeAsync(1_000);
+    emit({
+      id: 11,
+      peerId: new Api.PeerUser({ userId: BOT_PEER_ID as unknown as never }),
+      message: "🎉签到成功🎉\n您已经获得 1 积分。",
+      replyMarkup: new Api.ReplyInlineMarkup({ rows: [] }),
+    });
+
+    const msgs = await p;
+    expect(msgs).toHaveLength(2);
+    expect((msgs[1] as { message?: string }).message).toContain("签到成功");
+  });
+
+  it("resolves via earlyTextMatch after settle delay when no inline buttons arrive", async () => {
+    vi.useFakeTimers();
+    const { client, emit } = fakeClient();
+    const p = waitForBotReply(client, "SomeBot", 40_000, undefined, BOT_PEER_ID, {
+      earlyTextMatch: (m) =>
+        matchesDirectCheckinText((m as { message?: string }).message || "", {
+          successContains: "成功",
+        }) !== null,
+      earlySettleMs: 1_500,
+    });
+
+    // Non-matching progress text should not start early settle
+    emit({
+      id: 20,
+      peerId: new Api.PeerUser({ userId: BOT_PEER_ID as unknown as never }),
+      message: "正在查询...",
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    let settled = false;
+    void p.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    // Matching command-only reply resolves 1500ms later without waiting 40s
+    emit({
+      id: 21,
+      peerId: new Api.PeerUser({ userId: BOT_PEER_ID as unknown as never }),
+      message: "🎉 出席率 成功！",
+    });
+    await vi.advanceTimersByTimeAsync(1_501);
+
+    const msgs = await p;
+    expect(msgs).toHaveLength(2);
+    expect(settled).toBe(true);
+  });
+
+  it("short-circuits immediately if an inline button arrives during earlySettleMs", async () => {
+    vi.useFakeTimers();
+    const { client, emit } = fakeClient();
+    const p = waitForBotReply(client, "SomeBot", 40_000, undefined, BOT_PEER_ID, {
+      earlyTextMatch: (m) =>
+        matchesDirectCheckinText((m as { message?: string }).message || "") !== null,
+      earlySettleMs: 1_500,
+    });
+
+    emit({
+      id: 30,
+      peerId: new Api.PeerUser({ userId: BOT_PEER_ID as unknown as never }),
+      message: "🎉签到成功🎉",
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    emit({
+      id: 31,
+      peerId: new Api.PeerUser({ userId: BOT_PEER_ID as unknown as never }),
+      message: "赞助广告",
+      replyMarkup: new Api.ReplyInlineMarkup({ rows: [] }),
+    });
+
+    const msgs = await p;
+    expect(msgs).toHaveLength(2);
+  });
+});
+
+describe("matchesDirectCheckinText", () => {
+  it("recognizes command-only success phrases and custom successContains", () => {
+    expect(DIRECT_CHECKIN_SUCCESS_RE.test("🎉签到成功🎉\n您已经获得 1 积分。")).toBe(true);
+    expect(DIRECT_CHECKIN_SUCCESS_RE.test("签到成功！此次签到获得积分:7")).toBe(true);
+    expect(DIRECT_CHECKIN_SUCCESS_RE.test("🎉 出席率 成功！")).toBe(true);
+    expect(matchesDirectCheckinText("🎉签到成功🎉\n您已经获得 1 积分。", {})).toBe("direct_success");
+    expect(matchesDirectCheckinText("🎉 出席率 成功！", { successContains: "成功" })).toBe("success_contains");
+    expect(matchesDirectCheckinText("✅ 正在签到,请稍后...", {})).toBeNull();
+  });
+
+  it("guards against negative phrases, failContains, and cfChallenge", () => {
+    expect(matchesDirectCheckinText("未签到成功，请点击下方签到按钮", {})).toBeNull();
+    expect(matchesDirectCheckinText("签到失败：未加入频道", { failContains: "失败" })).toBe("fail");
+    expect(matchesDirectCheckinText("今天已经签到过了", { cfChallenge: true })).toBe("already");
+    expect(matchesDirectCheckinText("🎉签到成功🎉", { cfChallenge: true, successContains: "成功" })).toBeNull();
   });
 });

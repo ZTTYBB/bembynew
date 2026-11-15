@@ -150,8 +150,9 @@ export async function runJob(
   // Browser exits refused during this run, shared by every attempt below: retrying a
   // proxy Cloudflare has already turned down only replays the refusal
   const cfRun = newCfRunState();
+  const maxAttempts = Math.max(1, Number.isFinite(job.retryMax) ? Math.floor(job.retryMax) : 1);
 
-  for (let attempt = 1; attempt <= job.retryMax; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (signal?.aborted) throw new Error("Job cancelled");
     try {
       switch (job.jobType) {
@@ -195,7 +196,7 @@ export async function runJob(
             job.startCommand,
             job.checkinButton,
             attempt,
-            job.retryMax,
+            maxAttempts,
             signal,
             checkinProxy,
             checkinDevice,
@@ -339,18 +340,18 @@ export async function runJob(
       // if the underlying failure surfaced as something else.
       if (signal?.aborted) throw new Error("Job cancelled");
       console.error(
-        `[runner] Job "${job.name}" attempt ${attempt}/${job.retryMax} failed:`,
+        `[runner] Job "${job.name}" attempt ${attempt}/${maxAttempts} failed:`,
         err,
       );
-      if (attempt < job.retryMax && signal) {
+      if (attempt < maxAttempts && signal) {
         await delayAbortable(RETRY_DELAY_MS, signal).catch(() => {
           throw lastError;
         });
-      } else if (attempt < job.retryMax) {
+      } else if (attempt < maxAttempts) {
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       }
     }
   }
 
-  throw lastError;
+  throw lastError ?? new Error("Job failed with no recorded error");
 }

@@ -125,7 +125,7 @@ export function readExecutionJob(jobId: number): Job | undefined {
     scheduleWindowEnd: row.schedule_window_end,
     timezone: row.timezone,
     replyTimeoutMs: row.reply_timeout_ms,
-    retryMax: row.retry_max,
+    retryMax: Math.max(1, Number(row.retry_max) || 1),
     enabled: Boolean(row.enabled),
     createdAt: row.created_at,
     config: row.config ?? null,
@@ -320,7 +320,11 @@ async function perform(entry: Entry): Promise<ExecutionResult> {
   } catch (error) {
     const message = entry.timedOut
       ? `Watchdog: run exceeded ${watchdogMs()} ms`
-      : error instanceof Error ? error.message : String(error);
+      : error instanceof Error
+        ? (error.message || error.name || "Error")
+        : error != null
+          ? String(error)
+          : "Unknown error";
     const cancelled = !entry.timedOut && (entry.cancellationRequested || message === "Job cancelled");
     result = { status: cancelled ? "cancelled" : "failed", logId: entry.logId,
       message: cancelled ? "Cancelled" : message };

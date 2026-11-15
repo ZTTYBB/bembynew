@@ -499,6 +499,12 @@ runOnce("jobs-updated-at-backfill", () => {
   db.exec("UPDATE jobs SET updated_at = created_at WHERE updated_at IS NULL");
 });
 
+// Clamp legacy/imported retry_max values below 1 so jobs never skip execution and fail with "undefined"
+runOnce("jobs-retry-max-min-1", () => {
+  db.exec("UPDATE jobs SET retry_max = 1 WHERE retry_max < 1");
+  db.exec("UPDATE job_templates SET retry_max = 1 WHERE retry_max < 1");
+});
+
 // v1.4.3-patch-1: an older editor could save a linked custom job with the
 // selected values but without the template's option definitions. Restore only
 // rows that genuinely lack the property; an existing copy may be intentional.

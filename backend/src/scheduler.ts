@@ -43,9 +43,14 @@ onExecutionFinished((jobId, result) => {
     // Consult SQLite before re-arming: reusing a stale pending snapshot here
     // could schedule a second run while the durable plan is dispatching.
     const persisted = entry ? scheduleStore().get(jobId) : undefined;
-    if (persisted?.state !== "pending" ||
+    if (!persisted ||
       entry?.timer ||
       recoveryStore().activeForJob(jobId)) return;
+    if (persisted.state === "interrupted") {
+      scheduleAfterRun(jobId, persisted.revision);
+      return;
+    }
+    if (persisted.state !== "pending") return;
     const eligible = loadEligibleJobs().find(({ job: candidate }) => candidate.id === jobId);
     if (eligible) attachPlan(eligible.job, eligible.account, persisted);
   }
@@ -330,7 +335,7 @@ export function loadEligibleJobs(): Array<{
       scheduleWindowEnd: row.schedule_window_end,
       timezone: row.timezone,
       replyTimeoutMs: row.reply_timeout_ms,
-      retryMax: row.retry_max,
+      retryMax: Math.max(1, Number(row.retry_max) || 1),
       enabled: Boolean(row.enabled),
       createdAt: row.created_at,
       config: row.config ?? null,
@@ -610,27 +615,51 @@ function refreshJobs(): void {
       continue;
     }
     if (persisted) {
+      let currentPlan = persisted;
       // If a job has been stuck in 'dispatching' for over 15 minutes and is no longer actively running,
       // recover it to interrupted state so it can be rescheduled rather than blocking forever.
-      if (persisted.state === "dispatching") {
+      if (currentPlan.state === "dispatching") {
         const active = getExecutionStatus().running.some((r) => r.jobId === job.id);
-        const ageMs = Date.now() - new Date(persisted.updatedAt).getTime();
+        const ageMs = Date.now() - new Date(currentPlan.updatedAt).getTime();
         if (!active && (isNaN(ageMs) || ageMs > 15 * 60 * 1000)) {
-          console.warn(`[scheduler] Job ${job.id} (${job.name}) was stuck in dispatching state since ${persisted.updatedAt}; resetting to interrupted`);
-          const recovered = scheduleStore().save({ ...persisted, state: "interrupted" }, persisted.revision);
-          if (recovered) attachPlan(job, account, recovered);
+          console.warn(`[scheduler] Job ${job.id} (${job.name}) was stuck in dispatching state since ${currentPlan.updatedAt}; resetting to interrupted`);
+          const recovered = scheduleStore().save({ ...currentPlan, state: "interrupted" }, currentPlan.revision);
+          if (recovered) currentPlan = recovered;
+          else continue;
+        }
+      }
+
+      // Never replay an interrupted run immediately on its own day; once that calendar day (or 24h)
+      // has passed with no active restart recovery, resume normal scheduling for upcoming windows.
+      if (currentPlan.state === "interrupted") {
+        const planDay = DateTime.fromISO(currentPlan.nextRun, { zone: "utc" })
+          .setZone(resolvedTz)
+          .startOf("day");
+        const today = DateTime.now().setZone(resolvedTz).startOf("day");
+        const updatedMs = new Date(currentPlan.updatedAt).getTime();
+        const isStaleInterrupted =
+          (planDay.isValid && planDay < today) ||
+          (Number.isFinite(updatedMs) && Date.now() - updatedMs >= 24 * 60 * 60_000);
+        if (isStaleInterrupted) {
+          console.log(`[scheduler] Resuming stale interrupted schedule for job ${job.id} (${job.name})`);
+          const daysAhead = job.runOnce
+            ? (hasAttempted(job.id) ? 1 : firstRunDays(job))
+            : dailyCheckOn
+              ? daysUntilNextRun(job.id, resolvedTz, job.runEveryDays ?? 1, job.runEveryDaysMax)
+              : 0;
+          scheduleOne(job, account, daysAhead, false, { expectedRevision: currentPlan.revision });
           continue;
         }
       }
 
-      const changed = persisted.scheduleKey !== buildScheduleKey(job, resolvedTz);
-      if (persisted.state === "pending" && changed && !persisted.pinned && persisted.origin === "auto") {
+      const changed = currentPlan.scheduleKey !== buildScheduleKey(job, resolvedTz);
+      if (currentPlan.state === "pending" && changed && !currentPlan.pinned && currentPlan.origin === "auto") {
         const { daysAhead, catchUp } = planRun(job, resolvedTz);
         scheduleOne(job, account, daysAhead, catchUp);
-      } else if (!existing || existing.plan.revision !== persisted.revision ||
-        existing.plan.state !== persisted.state ||
-        (persisted.state === "pending" && !existing.timer && !recoveryStore().activeForJob(job.id))) {
-        attachPlan(job, account, persisted);
+      } else if (!existing || existing.plan.revision !== currentPlan.revision ||
+        existing.plan.state !== currentPlan.state ||
+        (currentPlan.state === "pending" && !existing.timer && !recoveryStore().activeForJob(job.id))) {
+        attachPlan(job, account, currentPlan);
       } else {
         existing.job = job;
         existing.account = account;

@@ -4,6 +4,30 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.13
+
+修复 `retry_max` 为 0 时任务跳过执行直接报 `undefined` 的问题，修复跨天 `interrupted` 调度计划永久死锁的问题，并增强纯命令直签文本识别及 `ReplyKeyboardMarkup` 底部键盘过滤。
+
+Fixes jobs with `retry_max = 0` skipping execution with `"undefined"`, prevents cross-day `interrupted` schedule deadlocks, ignores non-actionable `ReplyKeyboardMarkup` keyboards, and supports direct command-only check-in text matching.
+
+### 中文
+
+**修复与改进**
+
+- **修复重试次数为 0 导致跳过执行的问题** -- `runner.ts`、`execution.ts`、`scheduler.ts` 与备份导入接口对 `retryMax` 强制保底至少执行 1 次，避免循环 0 次直接抛出 `undefined`；同时新增启动一次性迁移，自动修正历史 `jobs` 与 `job_templates` 表中 `< 1` 的 `retry_max`。
+- **修复跨日中断任务调度永久卡死问题** -- 调度器在 `refreshJobs` 中自动识别跨越原计划日期（或超过 24 小时）且未处于恢复中的 `interrupted` 计划，将其自动重排回正常周期（同时保留同日中断不自动重放的安全约束）；执行结束回调发现残留非恢复态 `interrupted` 时亦自动接入重排。
+- **纯命令直签识别与底部回复键盘过滤** -- `waitForBotReply` 现忽略底部回复键盘（`ReplyKeyboardMarkup` / `ReplyKeyboardHide` / `ReplyKeyboardForceReply`），避免机器人先发“正在签到”配合底部菜单时漏收 1 秒后到达的真正结果消息；新增命令直签文本匹配与 `earlyTextMatch` 快速收尾等待，在无按钮回复、超时部分回复或回复仅含广告按钮时均可准确识别成功与失败关键字。
+
+### English
+
+**Fixes & Improvements**
+
+- **Enforce minimum 1 attempt when `retryMax < 1`** -- Clamps `retryMax` to `>= 1` across `runner.ts`, `execution.ts`, `scheduler.ts`, and backup import routes to prevent 0-attempt runs failing with `undefined`, plus a one-time DB migration clamping existing `jobs` and `job_templates` rows.
+- **Recover stale cross-day `interrupted` schedules** -- Scheduler refresh automatically reschedules stale `interrupted` plans from previous days (or older than 24 hours) when not active in recovery while preserving same-day non-replay guarantees, and `onExecutionFinished` handles trailing non-recovery `interrupted` states.
+- **Command-only check-in matching & `ReplyKeyboardMarkup` filtering** -- Ignores non-actionable `ReplyKeyboardMarkup` frames during `waitForBotReply`, adds `earlyTextMatch` quick settle for plain-text replies, and evaluates direct check-in outcomes across partial timeouts, buttonless replies, and replies with unrelated/ad inline buttons.
+
+---
+
 ## v1.0.12
 
 修复小程序验证页（如 embyguard.com）将说明文字误判为签到控件导致打卡失败的问题，签到任务支持小程序返回链接自动回传闭环，修复超时狗导致的调度队列死锁并增加僵尸任务自动恢复机制。

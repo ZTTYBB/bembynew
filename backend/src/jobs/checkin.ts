@@ -99,6 +99,49 @@ class BotReplyTimeoutError extends Error {
 export const ALREADY_CHECKED_IN_RE =
   /今日已签|已签到|您今天已|重复签到|今日已打卡|已经签到|签到过了|今天已经|您今日已|already checked in|already signed|already checked-in/i;
 
+/** Regex for command-only bots whose reply immediately reports check-in completion. */
+export const DIRECT_CHECKIN_SUCCESS_RE =
+  /(?:^|[\s🎉✅💎✨🎊>：:])(?:签到成功|打卡成功|出席率\s*成功)|(?:checkin|check-in|sign[- ]?in)\s*succeeded/i;
+
+const DIRECT_CHECKIN_NEGATIVE_RE =
+  /(?:签到|打卡|操作|校验|验证|请求)失败|请先|请点击|点击.{0,15}(?:按钮|签到|打卡|即可)|点击下方|即可签到|未签到|尚未签到|\bfailed\b/i;
+
+export function matchesDirectCheckinText(
+  text: string,
+  options: { cfChallenge?: boolean; successContains?: string; failContains?: string } = {},
+): 'fail' | 'already' | 'success_contains' | 'direct_success' | null {
+  if (!text) return null;
+  if (options.failContains && text.includes(options.failContains)) return 'fail';
+  if (ALREADY_CHECKED_IN_RE.test(text)) return 'already';
+  if (options.cfChallenge) return null;
+  if (options.successContains && text.includes(options.successContains)) return 'success_contains';
+  if (!DIRECT_CHECKIN_NEGATIVE_RE.test(text) && DIRECT_CHECKIN_SUCCESS_RE.test(text)) {
+    return 'direct_success';
+  }
+  return null;
+}
+
+function tryDirectCheckinOutcome(
+  commandText: string,
+  log: CheckinAttemptLog,
+  attemptStart: number,
+  options: { cfChallenge?: boolean; successContains?: string; failContains?: string },
+): boolean {
+  const kind = matchesDirectCheckinText(commandText, options);
+  if (!kind) return false;
+  if (kind === 'fail') {
+    throw new Error(`Reply indicates failure: "${options.failContains}" detected`);
+  }
+  const labels: Record<'already' | 'success_contains' | 'direct_success', string> = {
+    already: '今日已签 (提前完成)',
+    success_contains: '命令直签 (命中成功关键字)',
+    direct_success: '命令直签 (已完成)',
+  };
+  log.buttonClicked = labels[kind];
+  log.totalMs = Date.now() - attemptStart;
+  return true;
+}
+
 // ── Command template expansion ────────────────────────────────────────────────
 
 const LOWER = 'abcdefghijklmnopqrstuvwxyz';
@@ -713,6 +756,34 @@ async function reclickCheckinButton(
   }
 }
 
+export type WaitForBotReplyOptions = {
+  /** Resolves shortly after a qualifying text reply when no inline button menu arrives. */
+  earlyTextMatch?: (msg: Api.Message) => boolean;
+  earlySettleMs?: number;
+};
+
+function isActionableReplyMarkup(markup: unknown): boolean {
+  if (!markup) return false;
+  // Bottom reply keyboards (e.g. menu keyboards) cannot be invoked via GetBotCallbackAnswer
+  // and often precede the real inline/text response by a second or two.
+  if (
+    markup instanceof Api.ReplyKeyboardMarkup ||
+    markup instanceof Api.ReplyKeyboardHide ||
+    markup instanceof Api.ReplyKeyboardForceReply
+  ) {
+    return false;
+  }
+  const className = (markup as { className?: string }).className;
+  if (
+    className === 'ReplyKeyboardMarkup' ||
+    className === 'ReplyKeyboardHide' ||
+    className === 'ReplyKeyboardForceReply'
+  ) {
+    return false;
+  }
+  return true;
+}
+
 // Collects ALL bot messages; resolves when one has buttons, times out otherwise
 export function waitForBotReply(
   client: TelegramClient,
@@ -720,6 +791,7 @@ export function waitForBotReply(
   timeoutMs: number,
   signal?: AbortSignal,
   peerId?: string,
+  options?: WaitForBotReplyOptions,
 ): Promise<Api.Message[]> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error('Job cancelled')); return; }
@@ -732,9 +804,11 @@ export function waitForBotReply(
     const CLOCK_TOLERANCE_SEC = 5;
 
     const collected: Api.Message[] = [];
+    let earlyTimer: ReturnType<typeof setTimeout> | undefined;
 
     const cleanup = () => {
       clearTimeout(timer);
+      if (earlyTimer) clearTimeout(earlyTimer);
       client.removeEventHandler(handler, new NewMessage({}));
       signal?.removeEventListener('abort', onAbort);
     };
@@ -758,7 +832,18 @@ export function waitForBotReply(
       collected.push(msg);
       // Use replyMarkup (raw TLObject field) instead of msg.buttons getter, which
       // requires inputChat to be resolved and silently returns undefined when it isn't.
-      if ((msg as any).replyMarkup) { cleanup(); resolve(collected); }
+      if (isActionableReplyMarkup((msg as any).replyMarkup)) {
+        cleanup();
+        resolve(collected);
+        return;
+      }
+      if (!earlyTimer && options?.earlyTextMatch?.(msg)) {
+        const settleMs = options.earlySettleMs ?? 1_500;
+        earlyTimer = setTimeout(() => {
+          cleanup();
+          resolve(collected);
+        }, settleMs);
+      }
     };
 
     client.addEventHandler(handler, new NewMessage({ fromUsers: [botUsername] }));
@@ -1140,7 +1225,15 @@ export async function runCheckin(
     log.commandSent = expandedCommand; // record what was actually sent, not the template
     // Resolved up front so the reply listener can pin itself to this conversation
     const botPeerId = await client.getPeerId(botUsername);
-    const replyPromise = waitForBotReply(client, botUsername, replyTimeoutMs, signal, botPeerId);
+    const replyPromise = waitForBotReply(client, botUsername, replyTimeoutMs, signal, botPeerId, {
+      earlyTextMatch: (msg) =>
+        matchesDirectCheckinText((msg as any).message || (msg as any).text || '', {
+          cfChallenge,
+          successContains,
+          failContains,
+        }) !== null,
+      earlySettleMs: 1_500,
+    });
     const t_send = Date.now();
     await client.sendMessage(botUsername, { message: expandedCommand });
 
@@ -1156,6 +1249,12 @@ export async function runCheckin(
         log.commandResponseHtml = parsed.html;
         log.commandResponseImages = parsed.images;
         log.availableButtons = parsed.buttons;
+
+        const partialText = htmlToText(parsed.html || '');
+        if (tryDirectCheckinOutcome(partialText, log, attemptStart, { cfChallenge, successContains, failContains })) {
+          console.log(`[checkin] Bot reply timed out waiting for buttons, matched direct outcome: "${partialText.slice(0, 80)}"`);
+          return log;
+        }
       }
 
       // Some bots answer minutes or hours later, but a Mini App checkin button is a
@@ -1203,19 +1302,23 @@ export async function runCheckin(
     log.availableButtons = parsed.buttons;
 
     const commandText = htmlToText(parsed.html || '');
-    if (ALREADY_CHECKED_IN_RE.test(commandText)) {
-      console.log(`[checkin] Bot reply indicates already checked in today: "${commandText.slice(0, 80)}"`);
-      log.buttonClicked = "今日已签 (提前完成)";
-      log.totalMs = Date.now() - attemptStart;
+    const directKind = matchesDirectCheckinText(commandText, { cfChallenge, successContains, failContains });
+    if (directKind === 'already' || directKind === 'direct_success') {
+      tryDirectCheckinOutcome(commandText, log, attemptStart, { cfChallenge, successContains, failContains });
+      console.log(`[checkin] Bot command reply already completed check-in (${directKind}): "${commandText.slice(0, 80)}"`);
       return log;
     }
 
     let buttonsMsg = [...messages].reverse().find(m => (m as any).replyMarkup instanceof Api.ReplyInlineMarkup);
+    if (!buttonsMsg && tryDirectCheckinOutcome(commandText, log, attemptStart, { cfChallenge, successContains, failContains })) {
+      console.log(`[checkin] Bot replied without inline buttons, matched direct outcome: "${commandText.slice(0, 80)}"`);
+      return log;
+    }
     // Some bots keep the actionable menu on a pinned message and reply to the
     // command with plain text. Search that menu before declaring the reply
     // unusable. An empty target means "take any button" for {anyBtn}/{aiBtn};
     // their actual target is resolved after the pinned rows are loaded.
-    if (!buttonsMsg) {
+    if (!buttonsMsg && checkinButton.trim()) {
       const pinnedHit = await findPinnedButtonMessage(
         client,
         botUsername,
@@ -1238,7 +1341,12 @@ export async function runCheckin(
         log.availableButtons = parsed.buttons;
       }
     }
-    if (!buttonsMsg) throw new Error('No message with buttons received');
+    if (!buttonsMsg) {
+      if (tryDirectCheckinOutcome(commandText, log, attemptStart, { cfChallenge, successContains, failContains })) {
+        return log;
+      }
+      throw new Error('No message with buttons received');
+    }
 
     if (signal?.aborted) throw new Error('Job cancelled');
 
@@ -1277,6 +1385,9 @@ export async function runCheckin(
       row.buttons.some((btn: any) => buttonMatches(btn, targetText, useExactMatch)),
     );
     if (!replyHasMatch) {
+      if (tryDirectCheckinOutcome(commandText, log, attemptStart, { cfChallenge, successContains, failContains })) {
+        return log;
+      }
       const pinnedHit = await findPinnedButtonMessage(
         client,
         botUsername,
@@ -1431,9 +1542,11 @@ export async function runCheckin(
 
     const notFoundLabel = isAiBtn(checkinButton) ? `{aiBtn} -> "${targetText}"` : `"${checkinButton}"`;
     if (!clicked) {
-      if (ALREADY_CHECKED_IN_RE.test(commandText) || (log.callbackAnswer && ALREADY_CHECKED_IN_RE.test(log.callbackAnswer))) {
-        log.buttonClicked = "今日已签 (提前完成)";
-        log.totalMs = Date.now() - attemptStart;
+      if (
+        tryDirectCheckinOutcome(commandText, log, attemptStart, { cfChallenge, successContains, failContains }) ||
+        (log.callbackAnswer &&
+          tryDirectCheckinOutcome(log.callbackAnswer, log, attemptStart, { cfChallenge, successContains, failContains }))
+      ) {
         return log;
       }
       throw new Error(`Button ${notFoundLabel} not found in bot reply`);
