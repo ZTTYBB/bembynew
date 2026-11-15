@@ -295,6 +295,12 @@ describe("matchesDirectCheckinText", () => {
     expect(DIRECT_CHECKIN_SUCCESS_RE.test("签到成功！此次签到获得积分:7")).toBe(true);
     expect(DIRECT_CHECKIN_SUCCESS_RE.test("🎉 出席率 成功！")).toBe(true);
     expect(matchesDirectCheckinText("🎉签到成功🎉\n您已经获得 1 积分。", {})).toBe("direct_success");
+    expect(
+      matchesDirectCheckinText(
+        "✅ 正在签到,请稍后...\n🎉签到成功🎉\n您已经获得 1 积分。\n- 对方只要点击了即可给您加上3积分。",
+        {},
+      ),
+    ).toBe("direct_success");
     expect(matchesDirectCheckinText("🎉 出席率 成功！", { successContains: "成功" })).toBe("success_contains");
     expect(matchesDirectCheckinText("✅ 正在签到,请稍后...", {})).toBeNull();
   });

@@ -4,6 +4,26 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.14
+
+收紧直签文本负面关键词过滤规则，避免机器人签到成功回复底部的“好友点击邀请链接即可加分”等推广文案误触发拦截。
+
+Refines direct check-in negative text guards so referral footer phrases (e.g. "点击了即可") no longer suppress valid `签到成功` matches.
+
+### 中文
+
+**修复**
+
+- **直签负面规则误杀修复** -- 收窄 [checkin.ts](backend/src/jobs/checkin.ts) 中 `DIRECT_CHECKIN_NEGATIVE_RE` 的匹配范围，移除宽泛的 `点击.{0,15}即可` 分支（仍保留 `点击...按钮/签到/打卡/验证`、`点击下方` 与 `即可签到` 等真实待点击提示），解决部分机器人（如天启开户）在 `🎉签到成功🎉` 回复底部附带“对方只要点击了即可给您加上3积分”导致误判未签的问题。
+
+### English
+
+**Fixes**
+
+- **Tighten direct check-in negative guard** -- Scopes `DIRECT_CHECKIN_NEGATIVE_RE` in [checkin.ts](backend/src/jobs/checkin.ts) to explicit action prompts (`按钮` / `签到` / `打卡` / `验证` / `点击下方` / `即可签到`) instead of matching generic referral instructions like `"点击了即可"` after `"🎉签到成功🎉"`.
+
+---
+
 ## v1.0.13
 
 修复 `retry_max` 为 0 时任务跳过执行直接报 `undefined` 的问题，修复跨天 `interrupted` 调度计划永久死锁的问题，并增强纯命令直签文本识别及 `ReplyKeyboardMarkup` 底部键盘过滤。

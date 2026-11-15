@@ -104,7 +104,7 @@ export const DIRECT_CHECKIN_SUCCESS_RE =
   /(?:^|[\s🎉✅💎✨🎊>：:])(?:签到成功|打卡成功|出席率\s*成功)|(?:checkin|check-in|sign[- ]?in)\s*succeeded/i;
 
 const DIRECT_CHECKIN_NEGATIVE_RE =
-  /(?:签到|打卡|操作|校验|验证|请求)失败|请先|请点击|点击.{0,15}(?:按钮|签到|打卡|即可)|点击下方|即可签到|未签到|尚未签到|\bfailed\b/i;
+  /(?:签到|打卡|操作|校验|验证|请求)失败|请先|请点击|点击.{0,15}(?:按钮|签到|打卡|验证)|点击下方|即可签到|未签到|尚未签到|\bfailed\b/i;
 
 export function matchesDirectCheckinText(
   text: string,
