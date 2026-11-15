@@ -361,6 +361,7 @@ export type EmbywatchConfig = {
   verifyPlayable?: boolean;
   realWatch?: boolean;
   sequencePlay?: boolean;
+  ignoreCertErrors?: boolean;
   library?: string;
   proxyId?: string;
 };
@@ -1176,6 +1177,7 @@ export const jobsApi = {
     password: string;
     userAgent?: string;
     proxyId?: string;
+    ignoreCertErrors?: boolean;
     /** Walked in order, exactly as a run would. */
     backupUrls?: string[];
   }) =>
@@ -1379,6 +1381,7 @@ export type Settings = {
   /** Server-computed: the stored token as 12345678:****wXyZ. Never the raw value. */
   notify_bot_token_masked?: string;
   ua_presets: string;
+  default_ignore_cert_errors?: string;
   proxies: string;
   tg_app_clients: string;
   tg_client_mode: string; // 'default' | 'random'

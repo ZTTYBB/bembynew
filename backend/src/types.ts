@@ -792,6 +792,12 @@ export type EmbywatchConfig = {
    */
   sequencePlay?: boolean;
   /**
+   * Skip TLS certificate verification (expired, self-signed, or hostname-mismatched
+   * certificates) when connecting to this Emby server or its CDN stream nodes.
+   * When omitted, inherits the global `default_ignore_cert_errors` setting.
+   */
+  ignoreCertErrors?: boolean;
+  /**
    * Restrict watching to one Emby library, by its name or its 1-based index in
    * the user's library list. If it doesn't resolve, the whole server is used.
    */

@@ -424,9 +424,9 @@ router.get("/", (req, res) => {
 
 // Verify Emby server reachability and credentials without creating a job
 router.post("/test-emby", async (req, res) => {
-  const { serverUrl, username, password, userAgent, proxyId, backupUrls } = (req.body ?? {}) as Record<
+  const { serverUrl, username, password, userAgent, proxyId, backupUrls, ignoreCertErrors } = (req.body ?? {}) as Record<
     string,
-    string | string[] | undefined
+    string | string[] | boolean | undefined
   >;
   if (
     typeof serverUrl !== "string" ||
@@ -434,6 +434,7 @@ router.post("/test-emby", async (req, res) => {
     (password !== undefined && typeof password !== "string") ||
     (userAgent !== undefined && typeof userAgent !== "string") ||
     (proxyId !== undefined && typeof proxyId !== "string") ||
+    (ignoreCertErrors !== undefined && typeof ignoreCertErrors !== "boolean") ||
     (backupUrls !== undefined &&
       (!Array.isArray(backupUrls) || backupUrls.some((u) => typeof u !== "string"))) ||
     !serverUrl ||
@@ -460,6 +461,7 @@ router.post("/test-emby", async (req, res) => {
     userAgent,
     proxyId,
     backupUrls: backupUrls as string[] | undefined,
+    ...(ignoreCertErrors !== undefined ? { ignoreCertErrors } : {}),
   });
   res.json(result);
 });

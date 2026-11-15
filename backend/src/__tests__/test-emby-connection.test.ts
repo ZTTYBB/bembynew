@@ -156,4 +156,95 @@ describe('testEmbyConnection', () => {
     expect(MockProxyAgent).not.toHaveBeenCalled();
     expect((mockUndiciFetch.mock.calls[0][1] as any).dispatcher).toBeInstanceOf(MockAgent);
   });
+
+  it('uses an insecure IPv4 dispatcher when ignoreCertErrors is true and falls back to strict when false', async () => {
+    mockAuthSuccess();
+
+    await testEmbyConnection('https://emby.example.com', creds);
+    const strictDispatcher = (mockUndiciFetch.mock.calls[0][1] as any).dispatcher;
+
+    mockUndiciFetch.mockClear();
+    mockAuthSuccess();
+    await testEmbyConnection('https://emby.example.com', { ...creds, ignoreCertErrors: true });
+    const insecureDispatcher = (mockUndiciFetch.mock.calls[0][1] as any).dispatcher;
+
+    expect(MockAgent).toHaveBeenCalledWith({
+      connect: expect.objectContaining({ rejectUnauthorized: false }),
+    });
+    expect(insecureDispatcher).toBeInstanceOf(MockAgent);
+    expect(insecureDispatcher).not.toBe(strictDispatcher);
+
+    mockUndiciFetch.mockClear();
+    mockAuthSuccess();
+    await testEmbyConnection('https://emby.example.com', { ...creds, ignoreCertErrors: false });
+    expect((mockUndiciFetch.mock.calls[0][1] as any).dispatcher).toBe(strictDispatcher);
+  });
+
+  it('configures ProxyAgent with requestTls.rejectUnauthorized=false when ignoreCertErrors is true', async () => {
+    vi.mocked(db.prepare).mockReturnValue({
+      get: vi.fn((key: string) =>
+        key === 'proxies'
+          ? { value: JSON.stringify([{ id: 'p-tls', name: 'P-TLS', url: 'http://proxy-insecure.local:3128' }]) }
+          : undefined,
+      ),
+    } as any);
+    mockAuthSuccess();
+
+    const result = await testEmbyConnection('https://emby.example.com', {
+      ...creds,
+      proxyId: 'p-tls',
+      ignoreCertErrors: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(MockProxyAgent).toHaveBeenCalledWith({
+      uri: 'http://proxy-insecure.local:3128',
+      requestTls: { rejectUnauthorized: false },
+    });
+    expect((mockUndiciFetch.mock.calls[0][1] as any).dispatcher).toBeInstanceOf(MockProxyAgent);
+  });
+
+  it('respects default_ignore_cert_errors setting and explicit ignoreCertErrors=false override', async () => {
+    vi.mocked(db.prepare).mockReturnValue({
+      get: vi.fn((key: string) => {
+        if (key === 'default_ignore_cert_errors') return { value: 'true' };
+        if (key === 'proxies') {
+          return {
+            value: JSON.stringify([
+              { id: 'p-def', name: 'P-Def', url: 'http://proxy-default-insecure.local:3128' },
+              { id: 'p-strict', name: 'P-Strict', url: 'http://proxy-override-strict.local:3128' },
+            ]),
+          };
+        }
+        return undefined;
+      }),
+    } as any);
+    mockAuthSuccess();
+
+    await testEmbyConnection('https://emby.example.com', { ...creds, proxyId: 'p-def' });
+    expect(MockProxyAgent).toHaveBeenCalledWith({
+      uri: 'http://proxy-default-insecure.local:3128',
+      requestTls: { rejectUnauthorized: false },
+    });
+
+    MockProxyAgent.mockClear();
+    mockAuthSuccess();
+    await testEmbyConnection('https://emby.example.com', {
+      ...creds,
+      proxyId: 'p-strict',
+      ignoreCertErrors: false,
+    });
+    expect(MockProxyAgent).toHaveBeenCalledWith('http://proxy-override-strict.local:3128');
+  });
+
+  it('preserves TLS certificate error codes such as CERT_HAS_EXPIRED in failure message', async () => {
+    mockUndiciFetch.mockRejectedValue(
+      Object.assign(new Error('fetch failed'), { cause: { code: 'CERT_HAS_EXPIRED' } }),
+    );
+
+    const result = await testEmbyConnection('https://emby.example.com', creds);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('CERT_HAS_EXPIRED');
+  });
 });

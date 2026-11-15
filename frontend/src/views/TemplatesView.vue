@@ -288,6 +288,13 @@
               </label>
               <div style="font-size:11px;color:#aaa;margin-top:4px;padding-left:24px">{{ t('jobs.avoidPeakHoursHint') }}</div>
             </div>
+            <div class="form-group" style="margin-top:4px">
+              <label class="form-check">
+                <input v-model="embyCfg.ignoreCertErrors" type="checkbox" />
+                <span>{{ t('jobs.labelIgnoreCertErrors') }}</span>
+              </label>
+              <div style="font-size:11px;color:#aaa;margin-top:4px;padding-left:24px">{{ t('jobs.ignoreCertErrorsHint') }}</div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
@@ -1680,7 +1687,7 @@ function defaultAutoregCfg(): AutoregCfgForm {
 }
 const autoregCfg = reactive<AutoregCfgForm>(defaultAutoregCfg());
 
-const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrls: string[]; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; avoidPeakHours: boolean; maxEpisodesPerRun: number | string; library: string }>({
+const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; playDurationMax: number | string; backupUrls: string[]; userAgent: string; markWatched: boolean; verifyPlayable: boolean; realWatch: boolean; sequencePlay: boolean; avoidPeakHours: boolean; ignoreCertErrors: boolean; maxEpisodesPerRun: number | string; library: string }>({
   username: '',
   password: '',
   playDuration: '', playDurationMax: '', backupUrls: [],
@@ -1690,6 +1697,7 @@ const embyCfg = reactive<{ username: string; password: string; playDuration: num
   realWatch: false,
   sequencePlay: false,
   avoidPeakHours: false,
+  ignoreCertErrors: false,
   maxEpisodesPerRun: '',
   library: '',
 });
@@ -1746,7 +1754,7 @@ function onUaDropdownChange() {
 function onJobTypeChange() {
   customVariables.value = {};
   customOptions.value = [];
-  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, avoidPeakHours: false, ignoreCertErrors: false, library: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
   tplProxyId.value = '';
@@ -1855,6 +1863,7 @@ function buildConfig(): EmbywatchConfig | CustomConfig | AutoregConfig | null {
     cfg.realWatch = embyCfg.realWatch;
     cfg.sequencePlay = embyCfg.sequencePlay;
     if (embyCfg.avoidPeakHours) cfg.avoidPeakHours = true;
+    if (embyCfg.ignoreCertErrors) cfg.ignoreCertErrors = true;
     if (embyCfg.maxEpisodesPerRun !== '') cfg.maxEpisodesPerRun = Number(embyCfg.maxEpisodesPerRun);
     if (embyCfg.library) cfg.library = embyCfg.library;
     if (tplProxyId.value) cfg.proxyId = tplProxyId.value;
@@ -2130,7 +2139,7 @@ function openAdd() {
     firstRunMaxDays: 0,
   });
   runEveryDaysText.value = '1';
-  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+  Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, avoidPeakHours: false, ignoreCertErrors: false, library: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
   tplProxyId.value = '';
@@ -2195,21 +2204,22 @@ function openEdit(tpl: JobTemplate) {
           realWatch: c.realWatch === true,
           sequencePlay: c.sequencePlay === true,
           avoidPeakHours: c.avoidPeakHours === true,
+      ignoreCertErrors: c.ignoreCertErrors === true,
           maxEpisodesPerRun: c.maxEpisodesPerRun ?? '',
           library: c.library ?? '',
         });
         tplProxyId.value = c.proxyId ?? '';
         setUaState(c.userAgent ?? '');
       } catch {
-        Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+        Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, avoidPeakHours: false, ignoreCertErrors: false, library: '' });
         embyUaDropdown.value = '';
       }
     } else {
-      Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+      Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, avoidPeakHours: false, ignoreCertErrors: false, library: '' });
       embyUaDropdown.value = '';
     }
   } else if (tpl.jobType === 'custom') {
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, avoidPeakHours: false, ignoreCertErrors: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     if (tpl.config) {
       try {
@@ -2294,7 +2304,7 @@ function openEdit(tpl: JobTemplate) {
       customJobMaxRetries.value = 1;
     }
   } else if (tpl.jobType === 'autoreg') {
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, avoidPeakHours: false, ignoreCertErrors: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
     Object.assign(autoregCfg, defaultAutoregCfg());
@@ -2329,7 +2339,7 @@ function openEdit(tpl: JobTemplate) {
     }
   } else {
     // checkin
-    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, library: '' });
+    Object.assign(embyCfg, { username: '', password: '', playDuration: '', playDurationMax: '', backupUrls: [], userAgent: '', markWatched: true, verifyPlayable: true, realWatch: false, sequencePlay: false, avoidPeakHours: false, ignoreCertErrors: false, library: '' });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
     tplCheckinSuccessContains.value = '';
@@ -2534,7 +2544,7 @@ async function doCreateJobs() {
   try {
     // Verify server reachability and each account's credentials before creating
     if (createJobsTpl.value.jobType === 'embywatch') {
-      let tplCfg: { proxyId?: string; userAgent?: string } = {};
+      let tplCfg: { proxyId?: string; userAgent?: string; ignoreCertErrors?: boolean } = {};
       try {
         if (createJobsTpl.value.config) tplCfg = JSON.parse(createJobsTpl.value.config);
       } catch { /* ignore bad template config */ }
@@ -2545,6 +2555,7 @@ async function doCreateJobs() {
           password: r.embyPassword,
           ...(tplCfg.userAgent ? { userAgent: tplCfg.userAgent } : {}),
           ...(tplCfg.proxyId ? { proxyId: tplCfg.proxyId } : {}),
+          ...(tplCfg.ignoreCertErrors !== undefined ? { ignoreCertErrors: tplCfg.ignoreCertErrors } : {}),
         });
         if (!test.ok) {
           createJobsError.value = `${r.account.name}: ${t('jobs.errors.embyVerifyFailed')}${test.error ? `: ${test.error}` : ''}`;

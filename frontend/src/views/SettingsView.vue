@@ -1535,6 +1535,16 @@
             </select>
           </div>
 
+          <div class="form-group">
+            <label class="form-check">
+              <input v-model="form.default_ignore_cert_errors" type="checkbox" />
+              <span>{{ t("settings.labelDefaultIgnoreCertErrors") }}</span>
+            </label>
+            <p style="font-size: 12px; color: #888; margin: 4px 0 0; padding-left: 24px">
+              {{ t("settings.defaultIgnoreCertErrorsHint") }}
+            </p>
+          </div>
+
           <div style="margin-bottom: 16px">
             <div class="card-section-title" style="margin-bottom: 10px">
               {{ t("settings.uaPresetsSection") }}
@@ -2519,6 +2529,7 @@ const form = reactive({
   default_play_duration: 300,
   default_play_duration_max: "" as number | string,
   default_device_name: "Mac",
+  default_ignore_cert_errors: false,
   ai_model: "",
   ai_default_model_id: "",
   ai_fallback_enabled: true,
@@ -3567,6 +3578,7 @@ onMounted(async () => {
     form.default_play_duration = Number(s.default_play_duration ?? 300);
     form.default_play_duration_max = s.default_play_duration_max ? Number(s.default_play_duration_max) : "";
     form.default_device_name = s.default_device_name ?? "Mac";
+  form.default_ignore_cert_errors = s.default_ignore_cert_errors === "true" || s.default_ignore_cert_errors === "1";
     form.ai_model = s.ai_model ?? "";
     form.ai_default_model_id = s.ai_default_model_id ?? "";
     form.ai_fallback_enabled = s.ai_fallback_enabled !== "false";
@@ -3836,6 +3848,7 @@ async function saveEmby() {
       default_play_duration: String(form.default_play_duration),
       default_play_duration_max: form.default_play_duration_max ? String(form.default_play_duration_max) : "",
       default_device_name: form.default_device_name,
+    default_ignore_cert_errors: form.default_ignore_cert_errors ? "true" : "false",
       ua_presets: JSON.stringify(uaPresets.value),
     });
     // Editing a preset can migrate the selected default UA on the server.

@@ -587,6 +587,8 @@ const zh = {
     sequencePlayHint: "从上次离开的位置继续观看（Emby「继续观看」），若无则播放下一集（Next Up），仍无则随机选择；当前集看完后自动播放同剧集的下一集，直到用尽播放时长。仅在实际看完整集时才标记为已看，未看完的会保留在「继续观看」列表中。",
     labelAvoidPeakHours: "避开晚高峰（20:00 - 23:00）",
     avoidPeakHoursHint: "排程时自动避开服务器晚间高峰时段（当地时间 20:00 - 23:00），降低被服主风控风险",
+    labelIgnoreCertErrors: "跳过 SSL/TLS 证书验证",
+    ignoreCertErrorsHint: "当 Emby 服务器或跳转的视频节点证书过期、自签名或域名不匹配时仍允许连接与播放（仅对当前任务生效，也可在设置中开启全局默认）",
     labelMaxEpisodesPerRun: "连续追剧单次最多集数",
     maxEpisodesPlaceholder: "2",
     maxEpisodesHint: "连续追剧模式下单次运行最多观看的集数（默认 2 集），防止短剧或泡面番被过量连播",
@@ -1178,6 +1180,8 @@ const zh = {
     labelDeviceName: "设备名称",
     deviceNameVars: "支持变量：{username} Emby 用户名，以及随机 {word:4}、{num:4}、{alpha:8}、{uuid}。",
     labelUserAgent: "默认用户代理",
+    labelDefaultIgnoreCertErrors: "默认跳过 Emby SSL/TLS 证书验证",
+    defaultIgnoreCertErrorsHint: "允许所有未单独覆盖配置的 Emby 观看任务连接及播放证书过期或域名不匹配的 HTTPS 地址（可能降低 TLS 安全性，仅建议在信任的自用或反代服主域名证书过期时开启）",
     uaPresetsSection: "用户代理预设",
     uaPresetName: "名称",
     uaPresetValue: "用户代理字符串",
@@ -2179,6 +2183,9 @@ const en: typeof zh = {
     labelAvoidPeakHours: "Avoid peak hours (20:00 - 23:00)",
     avoidPeakHoursHint:
       "Avoid scheduling playback during evening peak hours (20:00 - 23:00 local time) to reduce server risk",
+    labelIgnoreCertErrors: "Ignore SSL/TLS certificate errors",
+    ignoreCertErrorsHint:
+      "Allow connecting and streaming even if the Emby server or redirected media CDN uses an expired, self-signed, or mismatched TLS certificate",
     labelMaxEpisodesPerRun: "Max episodes per run (Sequence Play)",
     maxEpisodesPlaceholder: "2",
     maxEpisodesHint:
@@ -2791,6 +2798,9 @@ const en: typeof zh = {
     labelDeviceName: "Device Name",
     deviceNameVars: "Supports variables: {username} (Emby username), and random {word:4}, {num:4}, {alpha:8}, {uuid}.",
     labelUserAgent: "Default User Agent",
+    labelDefaultIgnoreCertErrors: "Ignore Emby SSL/TLS certificate errors by default",
+    defaultIgnoreCertErrorsHint:
+      "Allow Emby Watch jobs without an explicit setting to connect and stream from HTTPS hosts with expired or mismatched certificates (weakens TLS verification; enable only when needed)",
     uaPresetsSection: "User Agent Presets",
     uaPresetName: "Name",
     uaPresetValue: "User Agent string",

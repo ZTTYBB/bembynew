@@ -4,6 +4,28 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v1.0.15
+
+新增 Emby 观看任务跳过 SSL/TLS 证书验证支持，并暴露证书错误诊断码，解决服务器或视频节点证书过期、域名不匹配或自签名时无法连接和播放的问题。
+
+Adds SSL/TLS certificate verification bypass (`ignoreCertErrors` per job/template + global `default_ignore_cert_errors` setting) and surfaces TLS certificate error codes during Emby playback and connectivity checks.
+
+### 中文
+
+**新增与修复**
+
+- **Emby SSL/TLS 证书跳过验证** -- 支持在任务配置、任务模板及全局设置（`系统设置 -> Emby 观看 -> 默认跳过 Emby SSL/TLS 证书验证`）中开启跳过证书验证，并同步生效于保存前的连接测试、媒体库拉取、播放信息获取、可播性探测与真实观看拉流节点。
+- **TLS 证书错误码保留与提示** -- 在 [embywatch.ts](backend/src/jobs/embywatch.ts) 中保留并展示 `CERT_HAS_EXPIRED`、`DEPTH_ZERO_SELF_SIGNED_CERT`、`ERR_TLS_CERT_ALTNAME_INVALID` 等 TLS 证书错误码与提示，便于快速定位因证书过期或域名不匹配导致的连接/拉流失败。
+
+### English
+
+**Features & Fixes**
+
+- **Skip SSL/TLS certificate verification for Emby Watch** -- Adds per-job/template `ignoreCertErrors` and global `default_ignore_cert_errors` settings covering pre-save `test-emby` checks, API requests, playability probes, and Real Watch / CDN media redirects, both direct and via proxy (`ProxyAgent.requestTls`).
+- **Surface TLS certificate error codes** -- Preserves OpenSSL/Node TLS error codes (`CERT_HAS_EXPIRED`, `SELF_SIGNED_CERT_IN_CHAIN`, `ERR_TLS_CERT_ALTNAME_INVALID`, etc.) in [embywatch.ts](backend/src/jobs/embywatch.ts) instead of dropping them, with actionable guidance when strict TLS verification fails.
+
+---
+
 ## v1.0.14
 
 收紧直签文本负面关键词过滤规则，避免机器人签到成功回复底部的“好友点击邀请链接即可加分”等推广文案误触发拦截。

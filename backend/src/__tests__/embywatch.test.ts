@@ -29,6 +29,7 @@ import { db } from '../db/database';
 import {
   EmbywatchError,
   isFallbackWorthy,
+  resolveIgnoreCertErrors,
   resolveProxyLabel,
   resolveServerCandidates,
   runEmbywatch,
@@ -1223,6 +1224,58 @@ describe('embywatch Progress heartbeat fault tolerance', () => {
       c => typeof c[0] === 'string' && c[0].endsWith('/Sessions/Playing/Stopped'),
     );
     expect(stoppedCall).toBe(true);
+  });
+});
+
+describe('embywatch ignoreCertErrors TLS option', () => {
+  it('resolves explicit boolean over global default_ignore_cert_errors setting', () => {
+    mockSettings();
+    expect(resolveIgnoreCertErrors(undefined)).toBe(false);
+    expect(resolveIgnoreCertErrors(true)).toBe(true);
+
+    mockSettings({ default_ignore_cert_errors: 'true' });
+    expect(resolveIgnoreCertErrors(undefined)).toBe(true);
+    expect(resolveIgnoreCertErrors(false)).toBe(false);
+
+    mockSettings({ default_ignore_cert_errors: 'false' });
+    expect(resolveIgnoreCertErrors(undefined)).toBe(false);
+  });
+
+  it('passes the insecure dispatcher across auth, PlaybackInfo, stream probes, and playback reports', async () => {
+    mockSettings({
+      proxies: JSON.stringify([{ id: 'p-watch-tls', name: 'WatchTLS', url: 'http://proxy-watch-tls.local:3128' }]),
+    });
+    routeFetch(206, { directStreamUrl: 'https://cdn-expired.example.com/videos/i1/original.mkv', directStatus: 206 });
+
+    const result = await runEmbywatch('https://emby-expired.example.com', {
+      ...baseConfig,
+      proxyId: 'p-watch-tls',
+      ignoreCertErrors: true,
+    });
+
+    expect(result.watchedSeconds).toBeGreaterThanOrEqual(1);
+    expect(MockProxyAgent).toHaveBeenCalledWith({
+      uri: 'http://proxy-watch-tls.local:3128',
+      requestTls: { rejectUnauthorized: false },
+    });
+    const insecureProxyInstance = MockProxyAgent.mock.instances[0];
+    const probeCall = mockUndiciFetch.mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('cdn-expired.example.com'),
+    );
+    expect(probeCall).toBeDefined();
+    expect((probeCall![1] as any).dispatcher).toBe(insecureProxyInstance);
+    for (const call of mockUndiciFetch.mock.calls) {
+      expect((call[1] as any).dispatcher).toBe(insecureProxyInstance);
+    }
+  });
+
+  it('surfaces TLS certificate error codes such as ERR_TLS_CERT_ALTNAME_INVALID when strict', async () => {
+    mockUndiciFetch.mockRejectedValue(
+      Object.assign(new Error('hostname mismatch'), { cause: { code: 'ERR_TLS_CERT_ALTNAME_INVALID' } }),
+    );
+
+    await expect(runEmbywatch('https://wrong-host.example.com', baseConfig))
+      .rejects.toThrow('Cannot reach Emby server (ERR_TLS_CERT_ALTNAME_INVALID)');
   });
 });
 

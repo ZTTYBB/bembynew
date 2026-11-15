@@ -139,4 +139,34 @@ describe('POST /jobs/test-emby', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ ok: false, error: 'Cannot reach Emby server' });
   });
+
+  it('passes ignoreCertErrors through when set explicitly as boolean', async () => {
+    vi.mocked(testEmbyConnection).mockResolvedValue({ ok: true });
+    const resTrue = makeRes();
+    await handler({ body: { ...validBody, ignoreCertErrors: true } }, resTrue);
+    expect(testEmbyConnection).toHaveBeenCalledWith('https://emby.example.com', {
+      username: 'user',
+      password: 'pass',
+      ignoreCertErrors: true,
+    });
+
+    vi.clearAllMocks();
+    vi.mocked(testEmbyConnection).mockResolvedValue({ ok: true });
+    const resFalse = makeRes();
+    await handler({ body: { ...validBody, ignoreCertErrors: false } }, resFalse);
+    expect(testEmbyConnection).toHaveBeenCalledWith('https://emby.example.com', {
+      username: 'user',
+      password: 'pass',
+      ignoreCertErrors: false,
+    });
+  });
+
+  it('rejects non-boolean ignoreCertErrors', async () => {
+    const res = makeRes();
+
+    await handler({ body: { ...validBody, ignoreCertErrors: 'true' } }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(testEmbyConnection).not.toHaveBeenCalled();
+  });
 });

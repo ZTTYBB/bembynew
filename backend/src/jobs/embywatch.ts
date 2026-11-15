@@ -58,21 +58,70 @@ function resolveDeviceName(template: string, username: string): string {
 const ipv4Agent = new Agent({
   connect: { lookup: (hostname, opts, cb) => lookup(hostname, { ...opts, family: 4 }, cb) },
 });
+let insecureIpv4Agent: Agent | undefined;
 
-// One dispatcher per proxy URL, reused for the life of the process. A fresh ProxyAgent
-// per request leaves its keep-alive sockets open until they time out, so a long watch
-// session paid a new tunnel handshake every call and dragged RSS up with it. The map is
-// bounded by the number of configured proxies.
+function getInsecureIpv4Agent(): Agent {
+  if (!insecureIpv4Agent) {
+    insecureIpv4Agent = new Agent({
+      connect: {
+        lookup: (hostname, opts, cb) => lookup(hostname, { ...opts, family: 4 }, cb),
+        rejectUnauthorized: false,
+      },
+    });
+  }
+  return insecureIpv4Agent;
+}
+
+// One dispatcher per proxy URL (plus optional insecure variant), reused for the
+// life of the process. A fresh ProxyAgent per request leaves its keep-alive sockets
+// open until they time out, so a long watch session paid a new tunnel handshake every
+// call and dragged RSS up with it. The map is bounded by the number of configured proxies.
 const proxyAgents = new Map<string, ProxyAgent>();
 
-function dispatcherFor(proxyUrl?: string): Agent | ProxyAgent {
-  if (!proxyUrl) return ipv4Agent;
-  let agent = proxyAgents.get(proxyUrl);
+function dispatcherFor(proxyUrl?: string, ignoreCertErrors = false): Agent | ProxyAgent {
+  if (!proxyUrl) return ignoreCertErrors ? getInsecureIpv4Agent() : ipv4Agent;
+  const cacheKey = ignoreCertErrors ? `insecure:${proxyUrl}` : proxyUrl;
+  let agent = proxyAgents.get(cacheKey);
   if (!agent) {
-    agent = new ProxyAgent(proxyUrl);
-    proxyAgents.set(proxyUrl, agent);
+    agent = ignoreCertErrors
+      ? new ProxyAgent({ uri: proxyUrl, requestTls: { rejectUnauthorized: false } })
+      : new ProxyAgent(proxyUrl);
+    proxyAgents.set(cacheKey, agent);
   }
   return agent;
+}
+
+const TLS_CERT_ERROR_CODES = new Set([
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'CERT_REVOKED',
+  'CERT_SIGNATURE_FAILURE',
+  'CERT_UNTRUSTED',
+  'CERT_REJECTED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'HOSTNAME_MISMATCH',
+]);
+
+function extractNetworkErrorCode(err: unknown): string {
+  if (!err || typeof err !== 'object') return '';
+  const anyErr = err as { code?: unknown; cause?: { code?: unknown } };
+  const rawCode = anyErr.cause?.code ?? anyErr.code;
+  if (typeof rawCode !== 'string') return '';
+  if (/^(?:E[A-Z0-9_]+|UND_ERR_[A-Z0-9_]+|ABORT_ERR)$/.test(rawCode) || TLS_CERT_ERROR_CODES.has(rawCode)) {
+    return rawCode;
+  }
+  return '';
+}
+
+export function resolveIgnoreCertErrors(value?: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  const setting = getSetting('default_ignore_cert_errors')?.trim().toLowerCase();
+  return setting === 'true' || setting === '1';
 }
 
 const DEFAULT_UA = 'SenPlayer/6.1.2 CFNetwork/1490.0.4 Darwin/23.2.0';
@@ -302,6 +351,7 @@ async function embyRequest<T = any>(
     deviceName: string;
     body?: unknown;
     proxyUrl?: string;
+    ignoreCertErrors?: boolean;
     signal?: AbortSignal;
     cancelSignal?: AbortSignal;
   }
@@ -325,16 +375,17 @@ async function embyRequest<T = any>(
       headers,
       body,
       signal: opts.signal ?? opts.cancelSignal,
-      dispatcher: dispatcherFor(opts.proxyUrl),
+      dispatcher: dispatcherFor(opts.proxyUrl, opts.ignoreCertErrors),
     } as Parameters<typeof undiciFetch>[1]) as unknown as Response;
   } catch (err: any) {
     throwIfAborted(opts.cancelSignal);
-    // Network-level failure (ECONNREFUSED, ENOTFOUND, timeout, etc.)
-    const rawCode = err?.cause?.code ?? err?.code;
-    const code = typeof rawCode === 'string' && /^(?:E[A-Z0-9_]+|UND_ERR_[A-Z0-9_]+|ABORT_ERR)$/.test(rawCode)
-      ? rawCode
-      : '';
-    throw new Error(`Cannot reach Emby server${code ? ` (${code})` : ''}`);
+    // Network-level failure (ECONNREFUSED, ENOTFOUND, TLS cert errors, timeout, etc.)
+    const code = extractNetworkErrorCode(err);
+    const certHint =
+      !opts.ignoreCertErrors && TLS_CERT_ERROR_CODES.has(code)
+        ? ' — SSL/TLS certificate verification failed; enable ignoreCertErrors if this server uses an expired or mismatched cert'
+        : '';
+    throw new Error(`Cannot reach Emby server${code ? ` (${code})` : ''}${certHint}`);
   }
 
   let text: string;
@@ -418,11 +469,13 @@ export async function testEmbyConnection(
     proxyId?: string;
     backupUrls?: string[];
     backupUrl?: string;
+    ignoreCertErrors?: boolean;
   },
 ): Promise<{ ok: boolean; userName?: string; error?: string; serverUrl?: string }> {
   const ua = opts.userAgent || getSetting('default_ua') || DEFAULT_UA;
   const deviceName = resolveDeviceName(getSetting('default_device_name') ?? 'Mac', opts.username);
   const proxyUrl = resolveProxyUrl(opts.proxyId);
+  const ignoreCertErrors = resolveIgnoreCertErrors(opts.ignoreCertErrors);
   const candidates = resolveServerCandidates(serverUrl, opts);
 
   let lastError = '';
@@ -434,6 +487,7 @@ export async function testEmbyConnection(
         ua,
         deviceName,
         proxyUrl,
+        ignoreCertErrors,
         signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
         body: { Username: opts.username, Pw: opts.password },
       });
@@ -454,6 +508,7 @@ type MediaOpts = {
   userId: string;
   deviceName: string;
   proxyUrl?: string;
+  ignoreCertErrors?: boolean;
   signal?: AbortSignal;
 };
 
@@ -466,7 +521,10 @@ const PROBE_RANGE_BYTES = 65_535;
  * Fetch the first bytes of a stream URL, as a real player would.
  * A readable file yields 206 (partial) or 200 with body bytes.
  */
-async function probeStream(url: string, opts: { ua: string; proxyUrl?: string; signal?: AbortSignal }): Promise<boolean> {
+async function probeStream(
+  url: string,
+  opts: { ua: string; proxyUrl?: string; ignoreCertErrors?: boolean; signal?: AbortSignal },
+): Promise<boolean> {
   try {
     const res = (await undiciFetch(url, {
       method: 'GET',
@@ -475,7 +533,7 @@ async function probeStream(url: string, opts: { ua: string; proxyUrl?: string; s
         Range: `bytes=0-${PROBE_RANGE_BYTES}`,
       },
       signal: opts.signal,
-      dispatcher: dispatcherFor(opts.proxyUrl),
+      dispatcher: dispatcherFor(opts.proxyUrl, opts.ignoreCertErrors),
     } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
 
     if (res.status !== 200 && res.status !== 206) {
@@ -493,9 +551,15 @@ async function probeStream(url: string, opts: { ua: string; proxyUrl?: string; s
     } finally {
       try { await reader.cancel?.(); } catch { /* already closed */ }
     }
-  } catch {
+  } catch (err) {
     // A cancelled job must abort, not be read as an unplayable item
     throwIfAborted(opts.signal);
+    const code = extractNetworkErrorCode(err);
+    if (!opts.ignoreCertErrors && TLS_CERT_ERROR_CODES.has(code)) {
+      console.warn(
+        `[embywatch] Stream probe failed TLS verification (${code}); enable ignoreCertErrors if stream host cert is expired or mismatched`,
+      );
+    }
     // Network-level failure reaching the stream, treat as unavailable
     return false;
   }
@@ -520,6 +584,7 @@ async function getClientStreamUrl(
       token: opts.token,
       deviceName: opts.deviceName,
       proxyUrl: opts.proxyUrl,
+      ignoreCertErrors: opts.ignoreCertErrors,
       cancelSignal: opts.signal,
       body: { DeviceProfile: { MaxStreamingBitrate: 140_000_000 } },
     });
@@ -597,13 +662,16 @@ type StreamProbe = { ok: boolean; size: number };
 // we can map a playback position to a byte offset. Servers behind proxies often
 // answer without a length (chunked, redirected, or transcoding), which is fine:
 // the caller streams open-ended instead of skipping Real Watch.
-async function probeStreamSize(url: string, opts: { ua: string; proxyUrl?: string; signal?: AbortSignal }): Promise<StreamProbe> {
+async function probeStreamSize(
+  url: string,
+  opts: { ua: string; proxyUrl?: string; ignoreCertErrors?: boolean; signal?: AbortSignal },
+): Promise<StreamProbe> {
   try {
     const res = (await undiciFetch(url, {
       method: 'GET',
       headers: { 'User-Agent': opts.ua, Range: 'bytes=0-0' },
       signal: opts.signal,
-      dispatcher: dispatcherFor(opts.proxyUrl),
+      dispatcher: dispatcherFor(opts.proxyUrl, opts.ignoreCertErrors),
     } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
     const contentRange = res.headers.get('content-range');
     const contentLength = res.headers.get('content-length');
@@ -678,13 +746,13 @@ async function drainRange(
   url: string,
   start: number,
   end: number | undefined,
-  opts: { ua: string; proxyUrl?: string; signal?: AbortSignal; maxBytes?: number }
+  opts: { ua: string; proxyUrl?: string; ignoreCertErrors?: boolean; signal?: AbortSignal; maxBytes?: number }
 ): Promise<number> {
   const res = (await undiciFetch(url, {
     method: 'GET',
     headers: { 'User-Agent': opts.ua, Range: `bytes=${start}-${end ?? ''}` },
     signal: opts.signal,
-    dispatcher: dispatcherFor(opts.proxyUrl),
+    dispatcher: dispatcherFor(opts.proxyUrl, opts.ignoreCertErrors),
   } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
 
   if (res.status !== 200 && res.status !== 206) {
@@ -716,13 +784,16 @@ async function drainRange(
 
 // Fetch a text body (HLS playlists), returning undefined rather than throwing so
 // a manifest hiccup only disables streaming for the segment.
-async function fetchText(url: string, opts: { ua: string; proxyUrl?: string; signal?: AbortSignal }): Promise<string | undefined> {
+async function fetchText(
+  url: string,
+  opts: { ua: string; proxyUrl?: string; ignoreCertErrors?: boolean; signal?: AbortSignal },
+): Promise<string | undefined> {
   try {
     const res = (await undiciFetch(url, {
       method: 'GET',
       headers: { 'User-Agent': opts.ua },
       signal: opts.signal,
-      dispatcher: dispatcherFor(opts.proxyUrl),
+      dispatcher: dispatcherFor(opts.proxyUrl, opts.ignoreCertErrors),
     } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
     if (!res.ok) {
       await res.body?.cancel?.();
@@ -743,7 +814,7 @@ type HlsSegment = { url: string; duration: number };
  */
 async function loadHlsSegments(
   playlistUrl: string,
-  opts: { ua: string; proxyUrl?: string; signal?: AbortSignal },
+  opts: { ua: string; proxyUrl?: string; ignoreCertErrors?: boolean; signal?: AbortSignal },
   depth = 0,
 ): Promise<HlsSegment[]> {
   const body = await fetchText(playlistUrl, opts);
@@ -780,6 +851,7 @@ type PlayCtx = {
   userId: string;
   deviceName: string;
   proxyUrl?: string;
+  ignoreCertErrors: boolean;
   playSessionId: string;
   realWatch: boolean;
   signal?: AbortSignal;
@@ -796,11 +868,26 @@ function toSegment(candidate: any): Segment {
 }
 
 function reqOpts(ctx: PlayCtx) {
-  return { ua: ctx.ua, token: ctx.token, deviceName: ctx.deviceName, proxyUrl: ctx.proxyUrl, cancelSignal: ctx.signal };
+  return {
+    ua: ctx.ua,
+    token: ctx.token,
+    deviceName: ctx.deviceName,
+    proxyUrl: ctx.proxyUrl,
+    ignoreCertErrors: ctx.ignoreCertErrors,
+    cancelSignal: ctx.signal,
+  };
 }
 
 function mediaOpts(ctx: PlayCtx): MediaOpts {
-  return { token: ctx.token, ua: ctx.ua, userId: ctx.userId, deviceName: ctx.deviceName, proxyUrl: ctx.proxyUrl, signal: ctx.signal };
+  return {
+    token: ctx.token,
+    ua: ctx.ua,
+    userId: ctx.userId,
+    deviceName: ctx.deviceName,
+    proxyUrl: ctx.proxyUrl,
+    ignoreCertErrors: ctx.ignoreCertErrors,
+    signal: ctx.signal,
+  };
 }
 
 // Pulls the bytes a player would consume between two playback positions.
@@ -817,7 +904,7 @@ type Streamer = {
  */
 async function buildStreamer(serverUrl: string, ctx: PlayCtx, seg: Segment): Promise<Streamer | undefined> {
   const { itemId, mediaSourceId, item, runtimeSeconds } = seg;
-  const net = { ua: ctx.ua, proxyUrl: ctx.proxyUrl, signal: ctx.signal };
+  const net = { ua: ctx.ua, proxyUrl: ctx.proxyUrl, ignoreCertErrors: ctx.ignoreCertErrors, signal: ctx.signal };
 
   const resolved = await resolveRealStreamUrl(serverUrl, itemId, mediaSourceId, {
     ...mediaOpts(ctx),
@@ -1050,6 +1137,7 @@ async function reportStopped(serverUrl: string, ctx: PlayCtx, seg: Segment, posi
     token: ctx.token,
     deviceName: ctx.deviceName,
     proxyUrl: ctx.proxyUrl,
+    ignoreCertErrors: ctx.ignoreCertErrors,
     signal: AbortSignal.timeout(STOP_REPORT_TIMEOUT_MS),
     body: {
       ItemId: seg.itemId,
@@ -1474,6 +1562,7 @@ async function runEmbywatchSession(
   const proxyUrl = context.proxyUrl;
   // Recorded in the log so a later investigation knows which exit was used
   const proxyLabel = context.proxyLabel;
+  const ignoreCertErrors = resolveIgnoreCertErrors(config.ignoreCertErrors);
 
   // 1. Authenticate. A backup address only steps in when the primary is
   //    unreachable outright; the URL that answers is the one the whole run uses,
@@ -1485,6 +1574,7 @@ async function runEmbywatchSession(
       ua,
       deviceName,
       proxyUrl,
+      ignoreCertErrors,
       cancelSignal: signal,
       body: { Username: config.username, Pw: config.password },
     });
@@ -1526,6 +1616,7 @@ async function runEmbywatchSession(
     userId,
     deviceName,
     proxyUrl,
+    ignoreCertErrors,
     playSessionId: generatePlaySessionId(),
     realWatch: config.realWatch === true,
     signal,

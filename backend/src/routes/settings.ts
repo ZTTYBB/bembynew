@@ -81,6 +81,7 @@ export const ALLOWED_KEYS = [
   "default_play_duration",
   "default_play_duration_max",
   "default_device_name",
+  "default_ignore_cert_errors",
   "ai_model",
   "ai_default_model_id",
   "ai_fallback_enabled",
